@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Descargador de Videos Clipprofit</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#E5E7EB;--surface:#FFFFFF;--surface2:#FFF3EB;
+  --border:#D1D5DB;--border2:#FFD5B5;
+  --p1:#FF6B00;--p2:#FF9F43;
+  --grad:linear-gradient(135deg,#FF6B00,#FF9F43);
+  --grad-btn:linear-gradient(135deg,#FF6B00,#FFAB5E);
+  --text:#1C1917;--muted:#78716C;
+  --success:#16A34A;--success-bg:#F0FDF4;--success-border:#BBF7D0;
+  --error:#DC2626;--error-bg:#FEF2F2;--error-border:#FECACA;
+  --shadow:0 10px 15px -3px rgba(0,0,0,0.1),0 4px 6px -2px rgba(0,0,0,0.05);
+  --shadow-lg:0 20px 25px -5px rgba(255,107,0,0.15),0 10px 10px -5px rgba(255,107,0,0.04);
+  --r:16px;--t:.2s ease;
+}
+html{scroll-behavior:smooth}
+body{
+  font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);
+  min-height:100vh;display:flex;flex-direction:column;align-items:center;
+  padding:28px 16px 24px;
+}
+body::before{
+  content:'';position:fixed;inset:0;
+  background:radial-gradient(ellipse 70% 40% at 50% -10%,rgba(255,107,0,.08),transparent);
+  pointer-events:none;z-index:0;
+}
+.wrap{width:100%;max-width:600px;position:relative;z-index:1;display:flex;flex-direction:column;gap:14px}
+
+/* Header */
+header{text-align:center;margin-bottom:6px}
+.logo{font-size:2rem;margin-bottom:6px}
+h1{
+  font-size:clamp(1.5rem,4vw,2.1rem);font-weight:800;letter-spacing:-0.5px;
+  background:var(--grad);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+}
+.subtitle{color:var(--muted);font-size:.88rem;margin-top:5px}
+
+/* Card */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:24px;box-shadow:var(--shadow)}
+
+/* Status banner */
+#statusBanner{
+  display:none;align-items:center;gap:10px;padding:12px 16px;border-radius:12px;
+  font-size:.84rem;font-weight:500;
+  background:#FFF7ED;border:1px solid #FED7AA;color:#EA580C;
+}
+#statusBanner.show{display:flex}
+.spinner-sm{width:15px;height:15px;border:2px solid #FED7AA;border-top-color:#EA580C;border-radius:50%;animation:spin .8s linear infinite;flex-shrink:0}
+
+/* URL input */
+.input-wrap{position:relative;margin-bottom:14px}
+.url-input{
+  width:100%;padding:15px 46px 15px 16px;font-size:.97rem;font-family:'Inter',sans-serif;
+  background:#FFF;border:1.5px solid var(--border);border-radius:12px;color:var(--text);outline:none;
+  transition:border-color var(--t),box-shadow var(--t);
+}
+.url-input::placeholder{color:#A8A29E}
+.url-input:focus{border-color:var(--p1);box-shadow:0 0 0 3px rgba(255,107,0,.12)}
+.clear-btn{position:absolute;right:13px;top:50%;transform:translateY(-50%);background:none;border:none;color:#A8A29E;cursor:pointer;font-size:1.1rem;display:none;padding:4px;border-radius:6px;transition:color var(--t)}
+.clear-btn:hover{color:var(--text)}
+.clear-btn.show{display:block}
+
+/* Platform badge */
+.platform-row{min-height:26px;margin-bottom:14px}
+.badge{display:inline-flex;align-items:center;gap:5px;padding:3px 11px;border-radius:100px;font-size:.76rem;font-weight:600;letter-spacing:.2px;animation:fadeUp .25s ease}
+.badge-yt{background:#FEE2E2;color:#DC2626;border:1px solid #FECACA}
+.badge-ig{background:#FCE7F3;color:#BE185D;border:1px solid #FBCFE8}
+.badge-tt{background:#ECFEFF;color:#0E7490;border:1px solid #A5F3FC}
+.badge-tw{background:#EFF6FF;color:#1D4ED8;border:1px solid #BFDBFE}
+.badge-fb{background:#EFF6FF;color:#1E40AF;border:1px solid #BFDBFE}
+.badge-vi{background:#F0F9FF;color:#0369A1;border:1px solid #BAE6FD}
+.badge-ot{background:#F5F5F4;color:#57534E;border:1px solid #D6D3D1}
+
+/* Preview */
+#preview{display:none;margin-bottom:14px;padding:12px;background:var(--surface2);border-radius:12px;border:1px solid var(--border2)}
+#preview.show{display:flex;gap:12px;align-items:flex-start}
+#previewThumb{width:78px;height:50px;object-fit:cover;border-radius:8px;flex-shrink:0}
+.preview-info{flex:1;min-width:0}
+#previewTitle{font-size:.86rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:3px}
+#previewMeta{font-size:.74rem;color:var(--muted)}
+
+/* Format toggle */
+.toggle-row{display:flex;gap:8px;margin-bottom:18px}
+.toggle-btn{
+  flex:1;padding:11px;border-radius:10px;border:1.5px solid var(--border);
+  background:transparent;color:var(--muted);font-family:'Inter',sans-serif;font-size:.88rem;font-weight:500;
+  cursor:pointer;transition:all var(--t);display:flex;align-items:center;justify-content:center;gap:6px;
+}
+.toggle-btn.active{background:#FFF7ED;border-color:var(--p1);color:var(--p1)}
+.toggle-btn:hover:not(.active){border-color:#D6D3D1;color:var(--text)}
+
+/* Download button */
+.dl-btn{
+  width:100%;padding:15px;font-size:1rem;font-weight:700;font-family:'Inter',sans-serif;
+  border:none;border-radius:12px;cursor:pointer;background:var(--grad-btn);color:#fff;
+  letter-spacing:.2px;transition:opacity var(--t),transform var(--t),box-shadow var(--t);
+  box-shadow:var(--shadow-lg);display:flex;align-items:center;justify-content:center;gap:8px;
+}
+.dl-btn:hover:not(:disabled){opacity:.92;transform:translateY(-1px);box-shadow:0 8px 28px rgba(255,107,0,.28)}
+.dl-btn:active:not(:disabled){transform:translateY(0)}
+.dl-btn:disabled{opacity:.5;cursor:not-allowed;transform:none}
+
+/* Progress */
+#progressCard{display:none}
+#progressCard.show{display:block}
+.progress-filename{font-size:.8rem;color:var(--muted);margin-bottom:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.progress-bar-wrap{background:#F5F5F4;border-radius:100px;height:8px;overflow:hidden;margin-bottom:9px;border:1px solid var(--border)}
+.progress-bar{height:100%;border-radius:100px;background:linear-gradient(90deg,#FF6B00,#FF9F43,#FF6B00);background-size:200% 100%;animation:shimmer 1.5s linear infinite;transition:width .4s ease;width:0%}
+.progress-stats{display:flex;justify-content:space-between;font-size:.79rem;color:var(--muted)}
+.progress-pct{font-weight:700;color:var(--text)}
+
+/* State messages */
+.state-msg{display:flex;align-items:center;gap:9px;padding:13px 15px;border-radius:11px;margin-top:10px;font-size:.88rem;font-weight:500}
+.state-success{background:var(--success-bg);border:1px solid var(--success-border);color:#15803D}
+.state-error{background:var(--error-bg);border:1px solid var(--error-border);color:var(--error)}
+.open-folder-btn{
+  margin-top:8px;width:100%;padding:11px;border-radius:10px;
+  background:#F0FDF4;border:1.5px solid var(--success-border);color:#15803D;
+  font-family:'Inter',sans-serif;font-size:.86rem;font-weight:600;
+  cursor:pointer;transition:all var(--t);display:flex;align-items:center;justify-content:center;gap:6px;
+}
+.open-folder-btn:hover{background:#DCFCE7}
+
+/* Settings */
+.settings-toggle{display:flex;align-items:center;gap:8px;background:none;border:none;color:var(--muted);font-family:'Inter',sans-serif;font-size:.84rem;cursor:pointer;padding:6px 0;transition:color var(--t)}
+.settings-toggle:hover{color:var(--text)}
+.settings-toggle .arrow{transition:transform var(--t);font-size:.68rem}
+.settings-toggle.open .arrow{transform:rotate(180deg)}
+#settingsPanel{display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--border)}
+#settingsPanel.show{display:block}
+.settings-label{font-size:.76rem;color:var(--muted);margin-bottom:6px;display:block}
+.settings-row{display:flex;gap:8px}
+.settings-input{flex:1;padding:10px 13px;background:#FFF;border:1.5px solid var(--border);border-radius:10px;color:var(--text);font-family:'Inter',sans-serif;font-size:.84rem;outline:none;transition:border-color var(--t)}
+.settings-input:focus{border-color:var(--p1)}
+.browse-btn{padding:10px 14px;border-radius:10px;border:1.5px solid var(--border);background:#FFF;color:var(--text);font-family:'Inter',sans-serif;font-size:.84rem;font-weight:500;cursor:pointer;transition:all var(--t);white-space:nowrap}
+.browse-btn:hover{border-color:var(--p1);color:var(--p1)}
+.save-btn{padding:10px 14px;border-radius:10px;border:none;background:var(--grad-btn);color:#fff;font-family:'Inter',sans-serif;font-size:.84rem;font-weight:600;cursor:pointer;transition:opacity var(--t);white-space:nowrap}
+.save-btn:hover{opacity:.87}
+.saved-note{font-size:.74rem;color:var(--success);margin-top:6px;display:none}
+
+/* Platforms */
+.platforms{text-align:center}
+.platforms p{font-size:.74rem;color:var(--muted);margin-bottom:8px}
+.platform-chips{display:flex;flex-wrap:wrap;gap:6px;justify-content:center}
+.chip{padding:3px 11px;border-radius:100px;font-size:.72rem;font-weight:500;background:var(--surface);border:1px solid var(--border);color:var(--muted)}
+
+/* Footer */
+footer{text-align:center;padding:8px 0 4px;font-size:.72rem;color:#A8A29E}
+footer a{color:#C2A87A;text-decoration:none}
+footer a:hover{text-decoration:underline}
+
+/* Animations */
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+@keyframes fadeUp{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}
+.spinner{width:17px;height:17px;border:2.5px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:spin .8s linear infinite}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="logo">
+      <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="url(#orangeGrad)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="2" y="3" width="20" height="18" rx="4" ry="4"></rect>
+        <path d="M10 8l6 4-6 4V8z"></path>
+        <line x1="2" y1="8" x2="22" y2="8"></line>
+        <line x1="7" y1="3" x2="7" y2="8"></line>
+        <line x1="17" y1="3" x2="17" y2="8"></line>
+      </svg>
+    </div>
+    <h1>Descargador de Videos ClipProfit</h1>
+    <p class="subtitle">Descarga vídeos de YouTube, Instagram, TikTok y más de 1000 plataformas</p>
+  </header>
+
+  <div id="statusBanner">
+    <div class="spinner-sm"></div>
+    <span>Preparando el motor de descarga… (solo la primera vez, espera un momento)</span>
+  </div>
+
+  <div class="card">
+    <div class="input-wrap">
+      <input id="urlInput" class="url-input" type="url" placeholder="Pega aquí el enlace del vídeo…" autocomplete="off" spellcheck="false">
+      <button class="clear-btn" id="clearBtn" title="Borrar">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+      </button>
+    </div>
+    <div class="platform-row" id="platformRow"></div>
+    <div id="preview">
+      <img id="previewThumb" src="" alt="">
+      <div class="preview-info">
+        <div id="previewTitle"></div>
+        <div id="previewMeta"></div>
+      </div>
+    </div>
+    <div class="toggle-row">
+      <button class="toggle-btn active" id="btnVideo" onclick="setMode('video')">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"></path><rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect></svg>
+        Vídeo MP4
+      </button>
+      <button class="toggle-btn" id="btnAudio" onclick="setMode('audio')">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>
+        Solo Audio MP3
+      </button>
+    </div>
+    <button class="dl-btn" id="dlBtn" onclick="startDownload()">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+      Descargar
+    </button>
+  </div>
+
+  <div class="card" id="progressCard">
+    <div id="progressFilename" class="progress-filename">Preparando descarga…</div>
+    <div class="progress-bar-wrap"><div class="progress-bar" id="progressBar"></div></div>
+    <div class="progress-stats">
+      <span id="progressSpeed">—</span>
+      <span><span id="progressEta"></span><span id="progressPct" class="progress-pct" style="margin-left:10px">0%</span></span>
+    </div>
+    <div id="stateMsg"></div>
+  </div>
+
+  <div class="card" style="padding:16px 20px">
+    <button class="settings-toggle" id="settingsToggle" onclick="toggleSettings()">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:2px"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+      Carpeta de destino <span class="arrow">▼</span>
+    </button>
+    <div id="settingsPanel">
+      <label class="settings-label" for="dirInput">Ruta donde se guardarán los vídeos:</label>
+      <div class="settings-row" style="background:#FFF; border:1.5px solid var(--border); border-radius:12px; padding:4px; gap:4px">
+        <input id="dirInput" class="settings-input" type="text" placeholder="/ruta/a/tu/carpeta" style="border:none; padding:8px 12px">
+        <button class="browse-btn" onclick="browseFolder()" style="background:var(--surface2); border:1px solid var(--border2); padding:8px 14px; border-radius:8px; font-weight:600; color:var(--p1)">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+          Examinar
+        </button>
+      </div>
+      <div class="saved-note" id="savedNote">✓ Carpeta guardada para la próxima vez</div>
+    </div>
+  </div>
+
+  <!-- Definición de gradiente para el logo -->
+  <svg width="0" height="0" style="position:absolute">
+    <defs>
+      <linearGradient id="orangeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" style="stop-color:#FF6B00" />
+        <stop offset="100%" style="stop-color:#FF9F43" />
+      </linearGradient>
+    </defs>
+  </svg>
+
+  <div class="platforms">
+    <p>Plataformas compatibles</p>
+    <div class="platform-chips">
+      <span class="chip">YouTube</span><span class="chip">Instagram</span><span class="chip">TikTok</span>
+      <span class="chip">Twitter / X</span><span class="chip">Facebook</span><span class="chip">Vimeo</span>
+      <span class="chip">Twitch</span><span class="chip">+1000 más</span>
+    </div>
+  </div>
+
+  <footer>
+    <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">
+      © 2026 Aitor Portales Crespí — CC BY 4.0
+    </a>
+  </footer>
+
+</div>
+
+<script>
+let mode = 'video', infoTimer = null, evtSource = null, isDownloading = false;
+let lastDownloadDir = null;
+
+window.addEventListener('DOMContentLoaded', () => {
+  loadConfig();
+  checkStatus();
+  document.getElementById('urlInput').addEventListener('input', onUrlInput);
+});
+
+function checkStatus() {
+  fetch('/api/status').then(r=>r.json()).then(d=>{
+    if(d.ytdlp !== 'ready'){
+      document.getElementById('statusBanner').classList.add('show');
+      document.getElementById('dlBtn').disabled = true;
+      setTimeout(checkStatus, 2500);
+    } else {
+      document.getElementById('statusBanner').classList.remove('show');
+      document.getElementById('dlBtn').disabled = false;
+    }
+  }).catch(()=>setTimeout(checkStatus,3000));
+}
+
+function onUrlInput(){
+  const url = document.getElementById('urlInput').value.trim();
+  document.getElementById('clearBtn').classList.toggle('show', !!url);
+  detectBadge(url);
+  clearTimeout(infoTimer);
+  hidePreview();
+  if(url.startsWith('http')) infoTimer = setTimeout(()=>fetchInfo(url), 900);
+}
+
+document.getElementById('clearBtn').addEventListener('click', ()=>{
+  document.getElementById('urlInput').value='';
+  document.getElementById('clearBtn').classList.remove('show');
+  document.getElementById('platformRow').innerHTML='';
+  hidePreview();
+});
+
+const PLATS=[
+  {re:/youtu/i,  label:'▶ YouTube',   cls:'badge-yt'},
+  {re:/instagr/i,label:'◈ Instagram', cls:'badge-ig'},
+  {re:/tiktok/i, label:'♪ TikTok',    cls:'badge-tt'},
+  {re:/twitter|x\.com/i,label:'✕ Twitter', cls:'badge-tw'},
+  {re:/facebook|fb\.watch/i,label:'f Facebook',cls:'badge-fb'},
+  {re:/vimeo/i,  label:'▷ Vimeo',     cls:'badge-vi'},
+  {re:/twitch/i, label:'⬛ Twitch',   cls:'badge-ot'},
+];
+
+function detectBadge(url){
+  const row=document.getElementById('platformRow');
+  if(!url){row.innerHTML='';return;}
+  const p=PLATS.find(x=>x.re.test(url));
+  row.innerHTML=p
+    ?`<span class="badge ${p.cls}">${p.label}</span>`
+    :url.startsWith('http')?`<span class="badge badge-ot">🌐 Web</span>`:'';
+}
+
+function fetchInfo(url){
+  fetch('/api/info',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url})})
+  .then(r=>r.json()).then(d=>{
+    if(d.error)return;
+    document.getElementById('previewThumb').src=d.thumbnail||'';
+    document.getElementById('previewTitle').textContent=d.title||'';
+    const dur=d.duration?formatDur(d.duration):'';
+    document.getElementById('previewMeta').textContent=[d.uploader,dur].filter(Boolean).join(' · ');
+    document.getElementById('preview').classList.add('show');
+  }).catch(()=>{});
+}
+
+function hidePreview(){document.getElementById('preview').classList.remove('show');}
+
+function formatDur(s){
+  const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),sec=s%60;
+  if(h) return `${h}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
+  return `${m}:${String(sec).padStart(2,'0')}`;
+}
+
+function setMode(m){
+  mode=m;
+  document.getElementById('btnVideo').classList.toggle('active',m==='video');
+  document.getElementById('btnAudio').classList.toggle('active',m==='audio');
+}
+
+function startDownload(){
+  if(isDownloading)return;
+  const url=document.getElementById('urlInput').value.trim();
+  if(!url||!url.startsWith('http')){shakeInput();return;}
+  isDownloading=true;
+  lastDownloadDir=null;
+  setDlBtn(true,'Preparando…');
+  showProgress();
+  setProgress(0,'','','');
+  document.getElementById('stateMsg').innerHTML='';
+  fetch('/api/download',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url,mode})})
+  .then(r=>r.json()).then(d=>{
+    if(d.error){showError(d.error);resetBtn();return;}
+    listenProgress(d.download_id);
+  }).catch(()=>{showError('Error de conexión con el servidor.');resetBtn();});
+}
+
+function listenProgress(id){
+  if(evtSource)evtSource.close();
+  evtSource=new EventSource(`/api/progress/${id}`);
+  evtSource.onmessage=(e)=>{
+    const d=JSON.parse(e.data);
+    if(d.type==='ping')return;
+    if(d.type==='progress'){setDlBtn(true,'Descargando…');setProgress(d.percent,d.speed,d.eta,d.filename);}
+    else if(d.type==='processing'){setDlBtn(true,'Procesando…');setProgress(99,'','','Procesando vídeo…');}
+    else if(d.type==='complete'){
+      lastDownloadDir=d.directory;
+      setProgress(100,'','',d.filename);
+      showSuccess();
+      evtSource.close();resetBtn();
+    } else if(d.type==='error'){showError(d.message);evtSource.close();resetBtn();}
+  };
+  evtSource.onerror=()=>{showError('Se ha perdido la conexión con el servidor.');evtSource.close();resetBtn();};
+}
+
+function setDlBtn(disabled,label){
+  const btn=document.getElementById('dlBtn');
+  btn.disabled=disabled;
+  btn.innerHTML=disabled?`<div class="spinner"></div> ${label}`:
+    `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="margin-right:8px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg> Descargar`;
+}
+function resetBtn(){isDownloading=false;setDlBtn(false,'Descargar');}
+function showProgress(){document.getElementById('progressCard').classList.add('show');}
+function setProgress(pct,speed,eta,filename){
+  document.getElementById('progressBar').style.width=pct+'%';
+  document.getElementById('progressPct').textContent=pct+'%';
+  document.getElementById('progressSpeed').textContent=speed||'—';
+  document.getElementById('progressEta').textContent=eta?'ETA '+eta:'';
+  if(filename)document.getElementById('progressFilename').textContent=filename;
+}
+function showSuccess(){
+  document.getElementById('stateMsg').innerHTML=`
+    <div class="state-msg state-success">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="margin-right:8px"><polyline points="20 6 9 17 4 12"></polyline></svg>
+      <span>¡Descargado correctamente!</span>
+    </div>
+    <button class="open-folder-btn" onclick="openSpecificFolder()">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right:8px"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+      Abrir carpeta de destino
+    </button>`;
+}
+function showError(msg){
+  showProgress();
+  document.getElementById('stateMsg').innerHTML=`
+    <div class="state-msg state-error">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="margin-right:8px"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+      <span>${escHtml(msg)}</span>
+    </div>`;
+}
+function openSpecificFolder(){
+  const folder=lastDownloadDir;
+  if(!folder)return;
+  fetch('/api/open-folder',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({folder})});
+}
+function shakeInput(){
+  const el=document.getElementById('urlInput');
+  el.style.borderColor='var(--error)';
+  setTimeout(()=>{el.style.borderColor='';},1500);
+}
+function escHtml(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+
+function loadConfig(){
+  fetch('/api/config').then(r=>r.json()).then(d=>{
+    document.getElementById('dirInput').value=d.download_dir||'';
+  });
+}
+function saveSettings(){
+  const dir=document.getElementById('dirInput').value.trim();
+  fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({download_dir:dir})})
+  .then(()=>{
+    const n=document.getElementById('savedNote');
+    n.style.display='block';
+    setTimeout(()=>n.style.display='none',2500);
+  });
+}
+function toggleSettings(){
+  document.getElementById('settingsPanel').classList.toggle('show');
+  document.getElementById('settingsToggle').classList.toggle('open');
+}
+function browseFolder(){
+  fetch('/api/browse-folder',{method:'POST'}).then(r=>r.json()).then(d=>{
+    if(d.folder) {
+      document.getElementById('dirInput').value=d.folder;
+      saveSettings(); // Guardado automático
+    }
+  });
+}
+</script>
+</body>
+</html>
