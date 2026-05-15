@@ -1,23 +1,23 @@
 @echo off
-title Video Downloader
-color 0A
+title Descargador de Videos ClipProfit
+color 0E
 chcp 65001 >nul
 
 echo.
 echo  ============================================
-echo   🎬  VIDEO DOWNLOADER  —  Iniciando...
+echo    ClipProfit - VIDEO DOWNLOADER
 echo  ============================================
 echo.
 
-:: Comprobar Node.js
+:: Comprobar si Node.js esta instalado
 node --version >nul 2>&1
 if %errorlevel% neq 0 (
-    echo  ❌  Node.js no está instalado.
+    echo  [!] Node.js no esta instalado.
     echo.
-    echo  Por favor, descárgalo gratis desde:
+    echo  Por favor, descargalo gratis desde:
     echo  https://nodejs.org
     echo.
-    echo  Instálalo y vuelve a hacer doble clic aquí.
+    echo  Instalalo y vuelve a iniciar esta aplicacion.
     echo.
     pause
     exit /b 1
@@ -26,16 +26,19 @@ if %errorlevel% neq 0 (
 :: Ir a la carpeta del script
 cd /d "%~dp0"
 
-:: Instalar dependencias si hace falta
+:: Cerrar procesos previos para evitar el error EADDRINUSE
+taskkill /f /im node.exe >nul 2>&1
+
+:: Instalar dependencias si no existen
 if not exist "node_modules" (
-    echo  ⏳  Instalando dependencias ^(solo la primera vez^)...
+    echo  [*] Instalando archivos necesarios - solo la primera vez...
     npm install --silent
-    echo  ✓  Dependencias instaladas.
+    echo  [OK] Archivos instalados.
     echo.
 )
 
-echo  ✓  Abriendo el navegador automáticamente...
-echo  ✓  Para cerrar el programa, cierra esta ventana.
+echo  [OK] Abriendo el navegador automaticamente...
+echo  [OK] Para cerrar el programa, cierra esta ventana.
 echo.
 
 :: Lanzar servidor

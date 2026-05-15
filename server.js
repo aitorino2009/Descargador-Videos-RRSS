@@ -16,7 +16,10 @@ const PORT = 7432;
 //  Rutas y config
 // ─────────────────────────────────────────
 
-const BIN_DIR = path.join(__dirname, "bin");
+const BIN_DIR = process.pkg
+  ? path.join(path.dirname(process.execPath), "bin")
+  : path.join(__dirname, "bin");
+
 const CONFIG_FILE = path.join(os.homedir(), ".videodl_config.json");
 
 function getYtDlpBinName() {
@@ -38,10 +41,10 @@ function getYtDlpDownloadUrl() {
 function getDefaultDownloadDir() {
   const home = os.homedir();
   if (process.platform === "win32")
-    return path.join(home, "Videos", "Video Downloader");
+    return path.join(home, "Videos", "Descargas Whop");
   if (process.platform === "darwin")
-    return path.join(home, "Movies", "Video Downloader");
-  return path.join(home, "Videos", "Video Downloader");
+    return path.join(home, "Movies", "Descargas Whop");
+  return path.join(home, "Videos", "Descargas Whop");
 }
 
 function loadConfig() {
@@ -365,6 +368,27 @@ app.get("/api/progress/:id", (req, res) => {
   req.on("close", () => {
     clearInterval(ping);
     dl.clients = dl.clients.filter((c) => c !== res);
+  });
+});
+
+// Selector nativo de carpeta
+app.post("/api/browse-folder", (req, res) => {
+  let cmd;
+  if (process.platform === "win32") {
+    cmd = `powershell.exe -NoProfile -Command "Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.FolderBrowserDialog; $d.Description = 'Selecciona la carpeta de destino'; if ($d.ShowDialog() -eq 'OK') { $d.SelectedPath }"`;
+  } else if (process.platform === "darwin") {
+    cmd = `osascript -e 'POSIX path of (choose folder with prompt "Selecciona la carpeta de destino")'`;
+  } else {
+    cmd = `zenity --file-selection --directory --title="Selecciona la carpeta de destino" 2>/dev/null || kdialog --getexistingdirectory "$HOME" 2>/dev/null`;
+  }
+
+  exec(cmd, (err, stdout) => {
+    const folder = stdout ? stdout.trim().replace(/[/\\]$/, "") : "";
+    if (folder) {
+      res.json({ folder });
+    } else {
+      res.json({ folder: null });
+    }
   });
 });
 
