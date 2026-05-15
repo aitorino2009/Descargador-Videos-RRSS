@@ -1,0 +1,12 @@
+{
+  "name": "video-downloader",
+  "version": "2.0.0",
+  "description": "Descargador de videos universal con interfaz web",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}

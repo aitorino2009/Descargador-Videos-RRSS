@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Video Downloader</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#08080f;--surface:#0f0f1a;--surface2:#16162a;--border:rgba(255,255,255,.08);
+  --p1:#7c3aed;--p2:#2563eb;--accent:linear-gradient(135deg,#7c3aed,#2563eb);
+  --text:#f1f5f9;--muted:#64748b;--success:#10b981;--error:#ef4444;
+  --r:16px;--transition:.2s ease;
+}
+html{scroll-behavior:smooth}
+body{
+  font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);
+  min-height:100vh;display:flex;flex-direction:column;align-items:center;
+  padding:24px 16px 48px;
+}
+body::before{
+  content:'';position:fixed;inset:0;
+  background:radial-gradient(ellipse 80% 50% at 50% -20%,rgba(124,58,237,.15),transparent);
+  pointer-events:none;z-index:0;
+}
+
+/* ── Layout ── */
+.wrap{width:100%;max-width:600px;position:relative;z-index:1}
+
+/* ── Header ── */
+header{text-align:center;margin-bottom:36px}
+.logo{font-size:2rem;margin-bottom:8px}
+h1{
+  font-size:clamp(1.6rem,4vw,2.2rem);font-weight:800;letter-spacing:-0.5px;
+  background:var(--accent);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+}
+.subtitle{color:var(--muted);font-size:.9rem;margin-top:6px}
+
+/* ── Card ── */
+.card{
+  background:var(--surface);border:1px solid var(--border);border-radius:24px;
+  padding:28px;margin-bottom:16px;backdrop-filter:blur(20px);
+}
+
+/* ── Status banner ── */
+#statusBanner{
+  display:none;align-items:center;gap:10px;padding:12px 16px;
+  border-radius:12px;margin-bottom:16px;font-size:.85rem;font-weight:500;
+  background:rgba(124,58,237,.12);border:1px solid rgba(124,58,237,.3);color:#a78bfa;
+}
+#statusBanner.show{display:flex}
+.spinner-sm{width:16px;height:16px;border:2px solid rgba(167,139,250,.3);border-top-color:#a78bfa;border-radius:50%;animation:spin .8s linear infinite;flex-shrink:0}
+
+/* ── URL input ── */
+.input-wrap{position:relative;margin-bottom:16px}
+.url-input{
+  width:100%;padding:16px 50px 16px 18px;font-size:1rem;font-family:'Inter',sans-serif;
+  background:var(--surface2);border:1.5px solid var(--border);border-radius:12px;
+  color:var(--text);outline:none;transition:border-color var(--transition),box-shadow var(--transition);
+}
+.url-input::placeholder{color:var(--muted)}
+.url-input:focus{border-color:var(--p1);box-shadow:0 0 0 3px rgba(124,58,237,.15)}
+.clear-btn{
+  position:absolute;right:14px;top:50%;transform:translateY(-50%);
+  background:none;border:none;color:var(--muted);cursor:pointer;font-size:1.2rem;
+  display:none;padding:4px;border-radius:6px;transition:color var(--transition);
+}
+.clear-btn:hover{color:var(--text)}
+.clear-btn.show{display:block}
+
+/* ── Platform badge ── */
+.platform-row{min-height:28px;margin-bottom:16px}
+.badge{
+  display:inline-flex;align-items:center;gap:6px;padding:4px 12px;
+  border-radius:100px;font-size:.78rem;font-weight:600;letter-spacing:.3px;
+  animation:fadeUp .3s ease;
+}
+.badge-yt{background:rgba(255,0,0,.12);color:#ff6b6b;border:1px solid rgba(255,0,0,.2)}
+.badge-ig{background:rgba(225,48,108,.12);color:#e1306c;border:1px solid rgba(225,48,108,.2)}
+.badge-tt{background:rgba(105,201,208,.12);color:#69c9d0;border:1px solid rgba(105,201,208,.2)}
+.badge-tw{background:rgba(29,161,242,.12);color:#1da1f2;border:1px solid rgba(29,161,242,.2)}
+.badge-fb{background:rgba(66,103,178,.12);color:#4267b2;border:1px solid rgba(66,103,178,.2)}
+.badge-vi{background:rgba(26,183,234,.12);color:#1ab7ea;border:1px solid rgba(26,183,234,.2)}
+.badge-ot{background:rgba(100,116,139,.12);color:#94a3b8;border:1px solid rgba(100,116,139,.2)}
+
+/* ── Format toggle ── */
+.toggle-row{display:flex;gap:8px;margin-bottom:20px}
+.toggle-btn{
+  flex:1;padding:11px;border-radius:10px;border:1.5px solid var(--border);
+  background:transparent;color:var(--muted);font-family:'Inter',sans-serif;
+  font-size:.9rem;font-weight:500;cursor:pointer;transition:all var(--transition);
+  display:flex;align-items:center;justify-content:center;gap:7px;
+}
+.toggle-btn.active{
+  background:rgba(124,58,237,.15);border-color:var(--p1);color:#a78bfa;
+}
+.toggle-btn:hover:not(.active){border-color:rgba(255,255,255,.2);color:var(--text)}
+
+/* ── Video preview ── */
+#preview{
+  display:none;flex-direction:column;gap:10px;margin-bottom:16px;
+  padding:12px;background:var(--surface2);border-radius:12px;border:1px solid var(--border);
+}
+#preview.show{display:flex}
+.preview-inner{display:flex;gap:12px;align-items:flex-start}
+#previewThumb{width:80px;height:52px;object-fit:cover;border-radius:8px;flex-shrink:0}
+.preview-info{flex:1;min-width:0}
+#previewTitle{font-size:.88rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:3px}
+#previewMeta{font-size:.75rem;color:var(--muted)}
+
+/* ── Download button ── */
+.dl-btn{
+  width:100%;padding:16px;font-size:1rem;font-weight:700;font-family:'Inter',sans-serif;
+  border:none;border-radius:12px;cursor:pointer;
+  background:var(--accent);color:#fff;letter-spacing:.3px;
+  transition:opacity var(--transition),transform var(--transition),box-shadow var(--transition);
+  box-shadow:0 4px 24px rgba(124,58,237,.35);
+  display:flex;align-items:center;justify-content:center;gap:8px;
+}
+.dl-btn:hover:not(:disabled){opacity:.9;transform:translateY(-1px);box-shadow:0 8px 32px rgba(124,58,237,.45)}
+.dl-btn:active:not(:disabled){transform:translateY(0)}
+.dl-btn:disabled{opacity:.5;cursor:not-allowed;transform:none}
+
+/* ── Progress card ── */
+#progressCard{display:none}
+#progressCard.show{display:block}
+.progress-filename{font-size:.82rem;color:var(--muted);margin-bottom:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.progress-bar-wrap{background:var(--surface2);border-radius:100px;height:8px;overflow:hidden;margin-bottom:10px;border:1px solid var(--border)}
+.progress-bar{
+  height:100%;border-radius:100px;
+  background:linear-gradient(90deg,#7c3aed,#2563eb,#7c3aed);
+  background-size:200% 100%;
+  animation:shimmer 1.5s linear infinite;
+  transition:width .4s ease;width:0%;
+}
+.progress-stats{display:flex;justify-content:space-between;font-size:.8rem;color:var(--muted)}
+.progress-pct{font-weight:700;color:var(--text)}
+
+/* ── State messages ── */
+.state-msg{
+  display:flex;align-items:center;gap:10px;padding:14px 16px;
+  border-radius:12px;margin-top:8px;font-size:.9rem;font-weight:500;
+}
+.state-success{background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.25);color:#34d399}
+.state-error{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.25);color:#f87171}
+.state-msg .icon{font-size:1.2rem}
+.open-folder-btn{
+  margin-top:8px;width:100%;padding:11px;border-radius:10px;
+  background:rgba(16,185,129,.12);border:1.5px solid rgba(16,185,129,.25);
+  color:#34d399;font-family:'Inter',sans-serif;font-size:.88rem;font-weight:600;
+  cursor:pointer;transition:all var(--transition);display:flex;align-items:center;justify-content:center;gap:7px;
+}
+.open-folder-btn:hover{background:rgba(16,185,129,.2)}
+
+/* ── Settings ── */
+.settings-toggle{
+  display:flex;align-items:center;gap:8px;background:none;border:none;
+  color:var(--muted);font-family:'Inter',sans-serif;font-size:.85rem;cursor:pointer;
+  padding:8px 0;transition:color var(--transition);
+}
+.settings-toggle:hover{color:var(--text)}
+.settings-toggle .arrow{transition:transform var(--transition);font-size:.7rem}
+.settings-toggle.open .arrow{transform:rotate(180deg)}
+#settingsPanel{display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--border)}
+#settingsPanel.show{display:block}
+.settings-label{font-size:.78rem;color:var(--muted);margin-bottom:6px;display:block}
+.settings-row{display:flex;gap:8px}
+.settings-input{
+  flex:1;padding:10px 14px;background:var(--surface2);border:1.5px solid var(--border);
+  border-radius:10px;color:var(--text);font-family:'Inter',sans-serif;font-size:.85rem;outline:none;
+  transition:border-color var(--transition);
+}
+.settings-input:focus{border-color:var(--p1)}
+.save-btn{
+  padding:10px 16px;border-radius:10px;border:none;background:var(--accent);
+  color:#fff;font-family:'Inter',sans-serif;font-size:.85rem;font-weight:600;cursor:pointer;
+  transition:opacity var(--transition);white-space:nowrap;
+}
+.save-btn:hover{opacity:.85}
+.saved-note{font-size:.75rem;color:var(--success);margin-top:6px;display:none}
+
+/* ── Platforms footer ── */
+.platforms{text-align:center;margin-top:8px}
+.platforms p{font-size:.75rem;color:var(--muted);margin-bottom:10px}
+.platform-chips{display:flex;flex-wrap:wrap;gap:6px;justify-content:center}
+.chip{
+  padding:4px 12px;border-radius:100px;font-size:.73rem;font-weight:500;
+  background:var(--surface);border:1px solid var(--border);color:var(--muted);
+}
+
+/* ── Animations ── */
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+@keyframes fadeUp{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+.spinner{width:18px;height:18px;border:2.5px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .8s linear infinite}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- Header -->
+  <header>
+    <div class="logo">🎬</div>
+    <h1>Video Downloader</h1>
+    <p class="subtitle">Descarga vídeos de YouTube, Instagram, TikTok y más</p>
+  </header>
+
+  <!-- Status yt-dlp downloading -->
+  <div id="statusBanner">
+    <div class="spinner-sm"></div>
+    <span>Preparando el motor de descarga... (solo la primera vez)</span>
+  </div>
+
+  <!-- Main card -->
+  <div class="card">
+
+    <!-- URL -->
+    <div class="input-wrap">
+      <input id="urlInput" class="url-input" type="url"
+        placeholder="Pega aquí el enlace del vídeo…"
+        autocomplete="off" spellcheck="false">
+      <button class="clear-btn" id="clearBtn" title="Borrar">✕</button>
+    </div>
+
+    <!-- Platform badge -->
+    <div class="platform-row" id="platformRow"></div>
+
+    <!-- Preview -->
+    <div id="preview">
+      <div class="preview-inner">
+        <img id="previewThumb" src="" alt="thumbnail">
+        <div class="preview-info">
+          <div id="previewTitle"></div>
+          <div id="previewMeta"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Format toggle -->
+    <div class="toggle-row">
+      <button class="toggle-btn active" id="btnVideo" onclick="setMode('video')">
+        🎬 Vídeo MP4
+      </button>
+      <button class="toggle-btn" id="btnAudio" onclick="setMode('audio')">
+        🎵 Solo Audio MP3
+      </button>
+    </div>
+
+    <!-- Download button -->
+    <button class="dl-btn" id="dlBtn" onclick="startDownload()">
+      ↓ Descargar
+    </button>
+
+  </div><!-- /card -->
+
+  <!-- Progress card -->
+  <div class="card" id="progressCard">
+    <div id="progressFilename" class="progress-filename">Preparando descarga…</div>
+    <div class="progress-bar-wrap">
+      <div class="progress-bar" id="progressBar"></div>
+    </div>
+    <div class="progress-stats">
+      <span id="progressSpeed">—</span>
+      <span>
+        <span id="progressEta"></span>
+        <span id="progressPct" class="progress-pct" style="margin-left:12px">0%</span>
+      </span>
+    </div>
+
+    <!-- Success / Error messages -->
+    <div id="stateMsg"></div>
+  </div>
+
+  <!-- Settings -->
+  <div class="card" style="padding:16px 20px">
+    <button class="settings-toggle" id="settingsToggle" onclick="toggleSettings()">
+      ⚙️ Carpeta de destino <span class="arrow">▼</span>
+    </button>
+    <div id="settingsPanel">
+      <label class="settings-label" for="dirInput">Ruta donde se guardarán los vídeos:</label>
+      <div class="settings-row">
+        <input id="dirInput" class="settings-input" type="text" placeholder="/ruta/a/tu/carpeta">
+        <button class="save-btn" onclick="saveSettings()">Guardar</button>
+      </div>
+      <div class="saved-note" id="savedNote">✓ Guardado correctamente</div>
+    </div>
+  </div>
+
+  <!-- Platforms footer -->
+  <div class="platforms">
+    <p>Plataformas compatibles</p>
+    <div class="platform-chips">
+      <span class="chip">YouTube</span>
+      <span class="chip">Instagram</span>
+      <span class="chip">TikTok</span>
+      <span class="chip">Twitter / X</span>
+      <span class="chip">Facebook</span>
+      <span class="chip">Vimeo</span>
+      <span class="chip">Twitch</span>
+      <span class="chip">+1000 más</span>
+    </div>
+  </div>
+
+</div><!-- /wrap -->
+
+<script>
+// ── Estado ──
+let mode = 'video';
+let infoTimer = null;
+let evtSource = null;
+let isDownloading = false;
+
+// ── Init ──
+window.addEventListener('DOMContentLoaded', () => {
+  loadConfig();
+  checkYtDlpStatus();
+  document.getElementById('urlInput').addEventListener('input', onUrlInput);
+});
+
+function checkYtDlpStatus() {
+  fetch('/api/status')
+    .then(r => r.json())
+    .then(d => {
+      if (d.ytdlp !== 'ready') {
+        document.getElementById('statusBanner').classList.add('show');
+        setTimeout(checkYtDlpStatus, 2000);
+      } else {
+        document.getElementById('statusBanner').classList.remove('show');
+        document.getElementById('dlBtn').disabled = false;
+      }
+    }).catch(() => setTimeout(checkYtDlpStatus, 3000));
+}
+
+// ── URL input ──
+function onUrlInput() {
+  const url = document.getElementById('urlInput').value.trim();
+  document.getElementById('clearBtn').classList.toggle('show', !!url);
+  detectPlatformBadge(url);
+  clearTimeout(infoTimer);
+  hidePreview();
+  if (url.startsWith('http')) {
+    infoTimer = setTimeout(() => fetchInfo(url), 900);
+  }
+}
+
+document.getElementById('clearBtn').addEventListener('click', () => {
+  document.getElementById('urlInput').value = '';
+  document.getElementById('clearBtn').classList.remove('show');
+  document.getElementById('platformRow').innerHTML = '';
+  hidePreview();
+});
+
+// ── Platform badge ──
+const PLATFORMS = [
+  { key:'yt',  re:/youtu/i,                label:'▶ YouTube',   cls:'badge-yt' },
+  { key:'ig',  re:/instagr/i,              label:'◈ Instagram', cls:'badge-ig' },
+  { key:'tt',  re:/tiktok/i,               label:'♪ TikTok',    cls:'badge-tt' },
+  { key:'tw',  re:/twitter|x\.com/i,       label:'✕ Twitter',   cls:'badge-tw' },
+  { key:'fb',  re:/facebook|fb\.watch/i,   label:'f Facebook',  cls:'badge-fb' },
+  { key:'vi',  re:/vimeo/i,                label:'▷ Vimeo',     cls:'badge-vi' },
+  { key:'tw2', re:/twitch/i,               label:'⬛ Twitch',   cls:'badge-ot' },
+];
+
+function detectPlatformBadge(url) {
+  const row = document.getElementById('platformRow');
+  if (!url) { row.innerHTML = ''; return; }
+  const plat = PLATFORMS.find(p => p.re.test(url));
+  if (plat) {
+    row.innerHTML = `<span class="badge ${plat.cls}">${plat.label}</span>`;
+  } else if (url.startsWith('http')) {
+    row.innerHTML = `<span class="badge badge-ot">🌐 Web</span>`;
+  } else {
+    row.innerHTML = '';
+  }
+}
+
+// ── Preview ──
+function fetchInfo(url) {
+  fetch('/api/info', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({url})
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (d.error) return;
+    document.getElementById('previewThumb').src = d.thumbnail || '';
+    document.getElementById('previewTitle').textContent = d.title || '';
+    const dur = d.duration ? formatDuration(d.duration) : '';
+    document.getElementById('previewMeta').textContent =
+      [d.uploader, dur].filter(Boolean).join(' · ');
+    document.getElementById('preview').classList.add('show');
+  }).catch(() => {});
+}
+
+function hidePreview() {
+  document.getElementById('preview').classList.remove('show');
+}
+
+function formatDuration(s) {
+  if (!s) return '';
+  const h = Math.floor(s/3600), m = Math.floor((s%3600)/60), sec = s%60;
+  if (h) return `${h}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
+  return `${m}:${String(sec).padStart(2,'0')}`;
+}
+
+// ── Format toggle ──
+function setMode(m) {
+  mode = m;
+  document.getElementById('btnVideo').classList.toggle('active', m==='video');
+  document.getElementById('btnAudio').classList.toggle('active', m==='audio');
+}
+
+// ── Download ──
+function startDownload() {
+  if (isDownloading) return;
+  const url = document.getElementById('urlInput').value.trim();
+  if (!url || !url.startsWith('http')) {
+    shakeInput(); return;
+  }
+
+  isDownloading = true;
+  setDlBtn(true, 'Preparando…');
+  showProgress();
+  setProgress(0, '', '', '');
+  document.getElementById('stateMsg').innerHTML = '';
+
+  fetch('/api/download', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({url, mode})
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (d.error) { showError(d.error); resetBtn(); return; }
+    listenProgress(d.download_id);
+  })
+  .catch(e => { showError('Error de conexión con el servidor.'); resetBtn(); });
+}
+
+function listenProgress(id) {
+  if (evtSource) evtSource.close();
+  evtSource = new EventSource(`/api/progress/${id}`);
+  evtSource.onmessage = (e) => {
+    const d = JSON.parse(e.data);
+    if (d.type === 'ping') return;
+    if (d.type === 'progress') {
+      setDlBtn(true, 'Descargando…');
+      setProgress(d.percent, d.speed, d.eta, d.filename);
+    } else if (d.type === 'processing') {
+      setDlBtn(true, 'Procesando…');
+      setProgress(99, '', '', 'Procesando vídeo…');
+    } else if (d.type === 'complete') {
+      setProgress(100, '', '', d.filename);
+      showSuccess(d.directory);
+      evtSource.close(); resetBtn();
+    } else if (d.type === 'error') {
+      showError(d.message);
+      evtSource.close(); resetBtn();
+    }
+  };
+  evtSource.onerror = () => {
+    showError('Se ha perdido la conexión con el servidor.');
+    evtSource.close(); resetBtn();
+  };
+}
+
+// ── UI helpers ──
+function setDlBtn(disabled, label) {
+  const btn = document.getElementById('dlBtn');
+  btn.disabled = disabled;
+  btn.innerHTML = disabled
+    ? `<div class="spinner"></div> ${label}`
+    : '↓ Descargar';
+}
+
+function resetBtn() {
+  isDownloading = false;
+  setDlBtn(false, '↓ Descargar');
+}
+
+function showProgress() {
+  document.getElementById('progressCard').classList.add('show');
+}
+
+function setProgress(pct, speed, eta, filename) {
+  document.getElementById('progressBar').style.width = pct + '%';
+  document.getElementById('progressPct').textContent = pct + '%';
+  document.getElementById('progressSpeed').textContent = speed || '—';
+  document.getElementById('progressEta').textContent = eta ? 'ETA ' + eta : '';
+  if (filename) document.getElementById('progressFilename').textContent = filename;
+}
+
+function showSuccess(dir) {
+  document.getElementById('stateMsg').innerHTML = `
+    <div class="state-msg state-success">
+      <span class="icon">✅</span>
+      <span>¡Descargado correctamente!</span>
+    </div>
+    <button class="open-folder-btn" onclick="openFolder('${escHtml(dir)}')">
+      📁 Abrir carpeta de descargas
+    </button>`;
+}
+
+function showError(msg) {
+  showProgress();
+  document.getElementById('stateMsg').innerHTML = `
+    <div class="state-msg state-error">
+      <span class="icon">❌</span>
+      <span>${escHtml(msg)}</span>
+    </div>`;
+}
+
+function openFolder(folder) {
+  fetch('/api/open-folder', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({folder})
+  });
+}
+
+function shakeInput() {
+  const el = document.getElementById('urlInput');
+  el.style.borderColor = 'var(--error)';
+  el.style.animation = 'none';
+  setTimeout(() => { el.style.borderColor = ''; }, 1200);
+}
+
+function escHtml(s) {
+  return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── Settings ──
+function loadConfig() {
+  fetch('/api/config').then(r=>r.json()).then(d => {
+    document.getElementById('dirInput').value = d.download_dir || '';
+  });
+}
+
+function saveSettings() {
+  const dir = document.getElementById('dirInput').value.trim();
+  fetch('/api/config', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({download_dir: dir})
+  }).then(() => {
+    const note = document.getElementById('savedNote');
+    note.style.display = 'block';
+    setTimeout(() => note.style.display = 'none', 2500);
+  });
+}
+
+function toggleSettings() {
+  const panel = document.getElementById('settingsPanel');
+  const toggle = document.getElementById('settingsToggle');
+  panel.classList.toggle('show');
+  toggle.classList.toggle('open');
+}
+</script>
+</body>
+</html>
