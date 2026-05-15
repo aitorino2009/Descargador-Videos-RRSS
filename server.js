@@ -145,7 +145,10 @@ app.post("/api/download", (req, res) => {
   const downloadId = crypto.randomUUID();
 
   const now = new Date();
-  const dateStr = now.toLocaleDateString("es-ES").replace(/\//g, "-");
+  const d = String(now.getDate()).padStart(2, '0');
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const y = String(now.getFullYear()).slice(-2);
+  const dateStr = `${d}-${m}-${y}`;
   let platform = "Otros";
   if (url.includes("youtube.com") || url.includes("youtu.be")) platform = "YouTube";
   else if (url.includes("instagram.com")) platform = "Instagram";
