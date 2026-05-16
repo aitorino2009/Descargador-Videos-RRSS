@@ -95,8 +95,31 @@ async function downloadYtDlp() {
 }
 
 function openFolder(folder) {
-  const cmd = process.platform === "win32" ? "explorer" : process.platform === "darwin" ? "open" : "xdg-open";
-  spawn(cmd, [folder], { detached: true, stdio: "ignore" }).unref();
+  if (process.platform === "win32") {
+    spawn("explorer", [folder], { detached: true, stdio: "ignore" }).unref();
+  } else if (process.platform === "darwin") {
+    spawn("open", [folder], { detached: true, stdio: "ignore" }).unref();
+  } else {
+    // Linux Fallback
+    exec(`xdg-open "${folder}"`, (err) => {
+      if (err) {
+        console.log(" [!] No se pudo abrir con xdg-open. Intentando terminal...");
+        // Intentar abrir terminales comunes en Arch/Hyprland
+        const terms = [
+          `kitty --directory "${folder}"`,
+          `alacritty --working-directory "${folder}"`,
+          `foot -D "${folder}"`,
+          `konsole --workdir "${folder}"`,
+          `gnome-terminal --working-directory="${folder}"`,
+          `xfce4-terminal --working-directory="${folder}"`,
+          `xterm -e "cd '${folder}' && bash"`
+        ];
+        // Ejecutar el primer comando que funcione
+        const finalCmd = terms.join(" || ");
+        exec(finalCmd);
+      }
+    });
+  }
 }
 
 // ─────────────────────────────────────────
@@ -170,6 +193,7 @@ app.post("/api/download", (req, res) => {
 
   proc.stdout.on("data", (data) => {
     const line = data.toString();
+    console.log(`[yt-dlp] ${line.trim()}`);
     const m = line.match(/(\d+\.\d+)% of .* at\s+(.*) ETA (.*)/);
     if (m) {
       state.percent = parseFloat(m[1]);
@@ -180,7 +204,18 @@ app.post("/api/download", (req, res) => {
     if (destMatch) state.filename = path.basename(destMatch[1]);
   });
 
+  proc.stderr.on("data", (data) => {
+    console.error(`[yt-dlp ERROR] ${data.toString().trim()}`);
+  });
+
+  proc.on("error", (err) => {
+    console.error(`[!] Error al iniciar yt-dlp: ${err.message}`);
+    state.status = "error";
+    logError(err);
+  });
+
   proc.on("close", (code) => {
+    console.log(`[yt-dlp] Proceso finalizado con código ${code}`);
     state.status = (code === 0) ? "complete" : "error";
     if (code === 0) state.percent = 100;
   });
@@ -213,7 +248,13 @@ app.post("/api/browse-folder", (req, res) => {
     cmd = `powershell.exe -NoProfile -Command "Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.FolderBrowserDialog; $d.Description = 'Selecciona la carpeta de destino'; if ($d.ShowDialog() -eq 'OK') { $d.SelectedPath }"`;
   } else if (process.platform === "darwin") {
     cmd = `osascript -e 'POSIX path of (choose folder with prompt "Selecciona la carpeta de destino")'`;
+  } else {
+    // Linux: Intentamos zenity, kdialog o un fallback de terminal (aunque terminal no sirve para devolver la ruta fácilmente)
+    cmd = `zenity --file-selection --directory --title="Selecciona la carpeta de destino" || kdialog --getexistingdirectory .`;
   }
+
+  if (!cmd) return res.json({ folder: null });
+
   exec(cmd, (err, stdout) => {
     const folder = stdout ? stdout.trim().replace(/[/\\]$/, "") : "";
     res.json({ folder: folder || null });
@@ -233,11 +274,25 @@ app.post("/api/open-folder", (req, res) => {
 // ─────────────────────────────────────────
 
 async function main() {
+  console.log(" [i] Verificando dependencias...");
+  
+  // Comprobar FFmpeg
+  exec("ffmpeg -version", (err) => {
+    if (err) {
+      console.warn(" [!] ADVERTENCIA: FFmpeg no detectado. Las descargas de alta calidad podrían fallar o no tener audio.");
+      console.warn(" [!] Por favor, instala ffmpeg: 'sudo pacman -S ffmpeg' (Arch) o similar.");
+    } else {
+      console.log("  ✓  FFmpeg detectado correctamente.");
+    }
+  });
+
   try {
     await downloadYtDlp();
+    console.log("  ✓  Motor yt-dlp listo.");
   } catch (err) {
     ytDlpStatus = "error";
     logError(err);
+    console.error(" [X] Error al preparar yt-dlp. Revisa tu conexión.");
   }
   startServer();
 }
@@ -263,8 +318,24 @@ function startServer() {
     console.log(`  ✓  Servidor en: http://127.0.0.1:${PORT}`);
     console.log(`  ✓  El navegador se abrirá automáticamente.`);
     console.log(`====================================================`);
-    const startCmd = process.platform === "win32" ? "start" : process.platform === "darwin" ? "open" : "xdg-open";
-    exec(`${startCmd} http://127.0.0.1:${PORT}`);
+    
+    const url = `http://127.0.0.1:${PORT}`;
+    if (process.platform === "win32") {
+      exec(`start ${url}`);
+    } else if (process.platform === "darwin") {
+      exec(`open ${url}`);
+    } else {
+      // Linux: Intentar xdg-open, firefox, chrome, en orden
+      const browserCmds = [
+        `xdg-open "${url}"`,
+        `firefox "${url}"`,
+        `google-chrome-stable "${url}"`,
+        `google-chrome "${url}"`,
+        `chromium "${url}"`,
+        `brave "${url}"`
+      ];
+      exec(browserCmds.join(" || "));
+    }
   });
 }
 
