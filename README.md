@@ -22,7 +22,7 @@ Esto es una herramienta rápida y multiplataforma diseñada para descargar víde
 Para obtener la última versión de este programa, sigue estos pasos:
 
 1.  Ve a la sección de [**Releases**](https://github.com/aitorino2009/Descargador-Videos-RRSS/releases) en la parte derecha de esta página.
-2.  Busca la versión más reciente (v1.0.0).
+2.  Busca la versión más reciente (v1.1.0).
 3.  Descarga el archivo correspondiente a tu sistema operativo:
     *   `Descargador-Videos-Windows.exe` (Windows)
     *   `Descargador-Videos-MacOS` (Mac)
