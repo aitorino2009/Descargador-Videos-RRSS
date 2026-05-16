@@ -30,6 +30,33 @@ function getYtDlpPath() {
 }
 
 let ytDlpStatus = "checking"; // checking, ready, downloading, error
+let ffmpegStatus = "checking";
+
+function getFfmpegBinName() {
+  return process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg";
+}
+
+function getFfmpegPath() {
+  return path.join(BIN_DIR, getFfmpegBinName());
+}
+
+async function checkFfmpeg() {
+  if (fs.existsSync(getFfmpegPath())) {
+    ffmpegStatus = "ready";
+    return true;
+  }
+  return new Promise((resolve) => {
+    exec("ffmpeg -version", (err) => {
+      if (!err) {
+        ffmpegStatus = "system";
+        resolve(true);
+      } else {
+        ffmpegStatus = "missing";
+        resolve(false);
+      }
+    });
+  });
+}
 
 // ─────────────────────────────────────────
 //  Funciones de Utilidad
@@ -72,6 +99,7 @@ async function downloadYtDlp() {
   const url = urls[process.platform] || urls.linux;
   const dest = getYtDlpPath();
 
+  console.log(` [i] Descargando yt-dlp desde: ${url}`);
   return new Promise((resolve, reject) => {
     const file = fs.createWriteStream(dest);
     https.get(url, (res) => {
@@ -84,11 +112,69 @@ async function downloadYtDlp() {
         file.close();
         if (process.platform !== "win32") fs.chmodSync(dest, "755");
         ytDlpStatus = "ready";
+        console.log("  ✓  yt-dlp descargado.");
         resolve();
       });
     }).on("error", (err) => {
       fs.unlink(dest, () => {});
       ytDlpStatus = "error";
+      reject(err);
+    });
+  });
+}
+
+async function downloadFfmpeg() {
+  const isReady = await checkFfmpeg();
+  if (isReady && ffmpegStatus !== "missing") return;
+
+  ffmpegStatus = "downloading";
+  console.log(" [i] FFmpeg no detectado. Iniciando descarga del motor de medios...");
+  
+  const urls = {
+    win32: "https://github.com/ffbinaries/ffbinaries-prebuilt/releases/download/v6.1/ffmpeg-6.1-win-64.zip",
+    darwin: "https://github.com/ffbinaries/ffbinaries-prebuilt/releases/download/v6.1/ffmpeg-6.1-osx-64.zip",
+    linux: "https://github.com/ffbinaries/ffbinaries-prebuilt/releases/download/v6.1/ffmpeg-6.1-linux-64.zip"
+  };
+
+  const url = urls[process.platform] || urls.linux;
+  const zipDest = path.join(BIN_DIR, "ffmpeg.zip");
+
+  return new Promise((resolve, reject) => {
+    const file = fs.createWriteStream(zipDest);
+    https.get(url, (res) => {
+      if (res.statusCode === 302 || res.statusCode === 301) {
+        https.get(res.headers.location, (res2) => res2.pipe(file));
+      } else {
+        res.pipe(file);
+      }
+      file.on("finish", () => {
+        file.close();
+        console.log(" [i] Extrayendo FFmpeg...");
+        
+        let extractCmd = "";
+        if (process.platform === "win32") {
+          extractCmd = `powershell -Command "Expand-Archive -Path '${zipDest}' -DestinationPath '${BIN_DIR}' -Force"`;
+        } else {
+          extractCmd = `unzip -o "${zipDest}" -d "${BIN_DIR}"`;
+        }
+
+        exec(extractCmd, (err) => {
+          fs.unlink(zipDest, () => {});
+          if (err) {
+            console.error(" [X] Error extrayendo FFmpeg. Asegúrate de tener 'unzip' instalado.");
+            ffmpegStatus = "error";
+            reject(err);
+          } else {
+            if (process.platform !== "win32") fs.chmodSync(getFfmpegPath(), "755");
+            ffmpegStatus = "ready";
+            console.log("  ✓  FFmpeg listo.");
+            resolve();
+          }
+        });
+      });
+    }).on("error", (err) => {
+      fs.unlink(zipDest, () => {});
+      ffmpegStatus = "error";
       reject(err);
     });
   });
@@ -180,7 +266,15 @@ app.post("/api/download", (req, res) => {
   const finalDir = path.join(cfg.download_dir, platform, dateStr);
   try { fs.mkdirSync(finalDir, { recursive: true }); } catch (_) {}
 
-  const args = ["--newline", "--progress", "--no-playlist", "-o", path.join(finalDir, "%(title)s.%(ext)s"), url];
+  const args = ["--newline", "--progress", "--no-playlist", "-o", path.join(finalDir, "%(title)s.%(ext)s")];
+  
+  // Usar FFmpeg local si existe
+  if (ffmpegStatus === "ready") {
+    args.push("--ffmpeg-location", getFfmpegPath());
+  }
+
+  args.push(url);
+
   if (mode === "audio") {
     args.push("-x", "--audio-format", "mp3");
   } else {
@@ -276,23 +370,16 @@ app.post("/api/open-folder", (req, res) => {
 async function main() {
   console.log(" [i] Verificando dependencias...");
   
-  // Comprobar FFmpeg
-  exec("ffmpeg -version", (err) => {
-    if (err) {
-      console.warn(" [!] ADVERTENCIA: FFmpeg no detectado. Las descargas de alta calidad podrían fallar o no tener audio.");
-      console.warn(" [!] Por favor, instala ffmpeg: 'sudo pacman -S ffmpeg' (Arch) o similar.");
-    } else {
-      console.log("  ✓  FFmpeg detectado correctamente.");
-    }
-  });
-
   try {
-    await downloadYtDlp();
-    console.log("  ✓  Motor yt-dlp listo.");
+    await Promise.all([
+      downloadYtDlp(),
+      downloadFfmpeg()
+    ]);
+    console.log(" ====================================================");
+    console.log("  ✓  Todos los motores están listos.");
   } catch (err) {
-    ytDlpStatus = "error";
     logError(err);
-    console.error(" [X] Error al preparar yt-dlp. Revisa tu conexión.");
+    console.error(" [X] Error al preparar motores. Revisa tu conexión.");
   }
   startServer();
 }
