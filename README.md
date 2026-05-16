@@ -33,9 +33,9 @@ Para obtener la última versión de este programa, sigue estos pasos:
 
 ## 💻 Requisitos del Sistema
 
-*   **Windows:** 7, 10 u 11.
-*   **macOS:** High Sierra o superior.
-*   **Linux:** Compatible con la mayoría de distribuciones modernas.
+- **Windows:** 10 u 11 (64-bit).
+- **macOS:** Catalina (10.15) o superior.
+- **Linux:** Distribuciones modernas (Ubuntu 20.04+, Debian 10+, etc).
 
 ---
 
