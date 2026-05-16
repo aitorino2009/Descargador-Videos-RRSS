@@ -9,7 +9,7 @@ Esto es una herramienta rápida y multiplataforma diseñada para descargar víde
 ## ✨ Características Principales
 
 *   **🚀 Sin Instalación:** Ejecutables directos que incluyen todo lo necesario para funcionar.
-*   **🎨 Interfaz Moderna:** Diseño "Whop-style" claro, limpio y con acentos naranjas.
+*   **🎨 Interfaz Moderna:** Diseño " claro, limpio y con acentos naranjas.
 *   **📂 Gestión de Carpetas:** Selector de destino nativo y apertura directa de la carpeta de descarga.
 *   **🎵 Versatilidad:** Descarga en formato Vídeo (MP4) o solo Audio (MP3).
 *   **🌐 Compatibilidad Total:** Soporta YouTube, Reels de Instagram, TikToks sin marca de agua y mucho más.
