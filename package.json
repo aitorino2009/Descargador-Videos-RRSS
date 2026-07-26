@@ -6,8 +6,9 @@
   "bin": "server.js",
   "scripts": {
     "start": "node server.js",
-    "start:hosted": "cross-env HOSTED=true node server.js",
-    "build": "pkg . --out-path dist"
+    "start:hosted": "node server.js",
+    "build": "echo 'No build step needed'",
+    "build:exe": "npx pkg . --out-path dist"
   },
   "pkg": {
     "assets": [
