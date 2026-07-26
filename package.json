@@ -6,6 +6,7 @@
   "bin": "server.js",
   "scripts": {
     "start": "node server.js",
+    "start:hosted": "cross-env HOSTED=true node server.js",
     "build": "pkg . --out-path dist"
   },
   "pkg": {
