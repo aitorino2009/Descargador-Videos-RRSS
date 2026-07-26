@@ -334,19 +334,23 @@ app.post("/api/download", (req, res) => {
 
   try { fs.mkdirSync(finalDir, { recursive: true }); } catch (_) {}
 
+  const hasCookies = fs.existsSync(COOKIES_FILE) && fs.statSync(COOKIES_FILE).size > 10;
+
   const args = [
     "--newline", 
     "--progress", 
     "--no-playlist", 
     "--restrict-filenames",
-    "--extractor-args", "youtube:player_client=android,ios;player_skip=webpage",
     "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
     "--referer", "https://www.google.com/",
     "-o", path.join(finalDir, "%(title)s.%(ext)s")
   ];
 
-  if (fs.existsSync(COOKIES_FILE) && fs.statSync(COOKIES_FILE).size > 10) {
+  if (hasCookies) {
     args.push("--cookies", COOKIES_FILE);
+    args.push("--extractor-args", "youtube:player_client=web,android");
+  } else {
+    args.push("--extractor-args", "youtube:player_client=android,ios;player_skip=webpage");
   }
 
   const ffmpegP = getFfmpegPath();
