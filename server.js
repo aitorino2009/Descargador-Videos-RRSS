@@ -165,17 +165,19 @@ async function downloadFfmpeg() {
         if (process.platform === "win32") {
           extractCmd = `powershell -Command "Expand-Archive -Path '${zipDest}' -DestinationPath '${BIN_DIR}' -Force"`;
         } else {
-          extractCmd = `unzip -o "${zipDest}" -d "${BIN_DIR}"`;
+          extractCmd = `python3 -c "import zipfile; zipfile.ZipFile('${zipDest}').extractall('${BIN_DIR}')" || unzip -o "${zipDest}" -d "${BIN_DIR}"`;
         }
 
         exec(extractCmd, (err) => {
           fs.unlink(zipDest, () => {});
           if (err) {
-            console.error(" [X] Error extrayendo FFmpeg. Asegúrate de tener 'unzip' instalado.");
+            console.error(" [X] Error extrayendo FFmpeg. Revisa los permisos.");
             ffmpegStatus = "error";
             reject(err);
           } else {
-            if (process.platform !== "win32") fs.chmodSync(getFfmpegPath(), "755");
+            if (process.platform !== "win32") {
+              try { fs.chmodSync(getFfmpegPath(), "755"); } catch (_) {}
+            }
             ffmpegStatus = "ready";
             console.log("  ✓  FFmpeg listo.");
             resolve();
@@ -302,8 +304,8 @@ app.post("/api/download", (req, res) => {
   if (mode === "audio") {
     args.push("-x", "--audio-format", "mp3");
   } else {
-    // Formato flexible compatible con Instagram, TikTok y YouTube
-    args.push("-f", "b/bestvideo+bestaudio/best");
+    // Formato adaptable prioritario
+    args.push("-f", "best[ext=mp4]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best/b");
   }
 
   const proc = spawn(getYtDlpPath(), args);
@@ -315,7 +317,8 @@ app.post("/api/download", (req, res) => {
     status: "downloading", 
     directory: finalDir,
     fullPath: null,
-    downloadId
+    downloadId,
+    message: ""
   };
   activeDownloads.set(downloadId, state);
 
@@ -337,21 +340,24 @@ app.post("/api/download", (req, res) => {
   });
 
   proc.stderr.on("data", (data) => {
-    console.error(`[yt-dlp ERROR] ${data.toString().trim()}`);
+    const errLine = data.toString().trim();
+    console.error(`[yt-dlp ERROR] ${errLine}`);
+    if (errLine.includes("ERROR:")) {
+      state.message = errLine;
+    }
   });
 
   proc.on("error", (err) => {
     console.error(`[!] Error al iniciar yt-dlp: ${err.message}`);
     state.status = "error";
+    state.message = err.message;
     logError(err);
   });
 
   proc.on("close", (code) => {
     console.log(`[yt-dlp] Proceso finalizado con código ${code}`);
-    state.status = (code === 0) ? "complete" : "error";
     if (code === 0) {
-      state.percent = 100;
-      // Buscar siempre el archivo final completo en finalDir
+      // Buscar el archivo final completo en finalDir
       try {
         if (fs.existsSync(finalDir)) {
           const files = fs.readdirSync(finalDir).filter(f => 
@@ -363,9 +369,20 @@ app.post("/api/download", (req, res) => {
           if (files.length > 0) {
             state.filename = files[0];
             state.fullPath = path.join(finalDir, files[0]);
+            state.status = "complete";
+            state.percent = 100;
+          } else {
+            state.status = "error";
+            state.message = "No se pudo generar el archivo final en el servidor.";
           }
+        } else {
+          state.status = "error";
+          state.message = "Directorio temporal no encontrado.";
         }
-      } catch (_) {}
+      } catch (err) {
+        state.status = "error";
+        state.message = err.message;
+      }
 
       // En modo hosted, programar limpieza tras 30 minutos si el usuario no descarga
       if (isHosted) {
@@ -377,6 +394,9 @@ app.post("/api/download", (req, res) => {
           } catch (_) {}
         }, 30 * 60 * 1000);
       }
+    } else {
+      state.status = "error";
+      if (!state.message) state.message = "Error descargando el vídeo desde la plataforma originaria.";
     }
   });
 

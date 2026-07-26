@@ -21,8 +21,8 @@ Este archivo representa la **MEMORIA LITERARIA VIVA DEL AGENTE**. Aquí se regis
 ---
 
 ## ⚠️ 3. FALLOS COMETIDOS Y CÓMO EVITARLOS
-1. **Fallo**: `{"error":"Archivo no encontrado o expirado."}` al descargar vía navegador. Se debía a dos causas: (a) la salida de `yt-dlp` al combinar vídeo y audio incluye comillas y partes intermedias (`.f137.mp4`), lo que corrompía la ruta `state.fullPath`. (b) la tarjeta "Carpeta de destino" no tenía `id="settingsCard"`, por lo que el script no la ocultaba en modo servidor.
-   - **Solución / Regla**: Añadido `id="settingsCard"` en `index.html` e inspección directa con `fs.readdirSync(finalDir)` descartando fragmentos temporales en `proc.on("close")` para garantizar la ruta 100% correcta.
+1. **Fallo**: `{"error":"Archivo no encontrado o expirado."}` al descargar en Linux/Render. Ocurrió por 3 razones: (a) En Linux no existía la utilidad `unzip`, haciendo que `downloadFfmpeg()` fallase. Sin `ffmpeg`, `yt-dlp` no podía combinar pistas `bestvideo+bestaudio`. (b) `yt-dlp` elegía formatos separados sin fallback seguro. (c) El servidor marcaba estado `complete` sin verificar la presencia física del archivo final en el disco.
+   - **Solución / Regla**: (1) Extracción de `ffmpeg.zip` mediante el módulo nativo de `python3` (`python3 -c "import zipfile..."`). (2) Selección adaptable de formatos (`best[ext=mp4]/bestvideo[ext=mp4]+bestaudio/best`). (3) Validación física del archivo en disco antes de marcar `complete`.
 2. **Fallo**: `ReferenceError: HOST is not defined` al arrancar `startServer()`. Se debe a no declarar `const HOST` en el encabezado global de `server.js`.
    - **Solución / Regla**: Definir siempre `isHosted`, `PORT`, `HOST` y `SERVER_TEMP_DIR` al principio de `server.js` antes de cualquier función o middleware.
 3. **Fallo**: Render fallaba en la fase de Build (38 segundos) porque ejecutaba automáticamente `npm run build`, y allí estaba configurado `pkg . --out-path dist`. Al no estar `pkg` instalado en el servidor de Render, el despliegue daba error `pkg: command not found`.
