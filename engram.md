@@ -22,7 +22,9 @@ Este archivo representa la **MEMORIA LITERARIA VIVA DEL AGENTE**. Aquí se regis
 ---
 
 ## ⚠️ 3. FALLOS COMETIDOS Y CÓMO EVITARLOS
-1. **Fallo**: `Requested format is not available` al pedir descargas de YouTube. Ocurrió porque la cadena de formato forzaba la extensión rígida `best[ext=mp4]`, la cual no existe directamente en vídeos de alta resolución donde YouTube utiliza WebM/VP9 o flujos mixtos.
+1. **Fallo**: `n challenge solving failed` seguido de `Only images are available for download` / `Requested format is not available`. Ocurre porque YouTube requiere resolver un desafío criptográfico en JavaScript (el algoritmo `n`). Sin un runtime JS especificado, YouTube oculta todos los formatos de vídeo y solo ofrece miniaturas.
+   - **Solución / Regla**: Incluir `--js-runtimes node` en los argumentos globales de `yt-dlp`. Como el entorno Node.js del servidor está disponible, `yt-dlp` resuelve el `n challenge` inmediatamente y expone todos los formatos de vídeo (1080p, 720p, etc.).
+2. **Fallo**: `Requested format is not available` al pedir descargas de YouTube. Ocurrió porque la cadena de formato forzaba la extensión rígida `best[ext=mp4]`, la cual no existe directamente en vídeos de alta resolución donde YouTube utiliza WebM/VP9 o flujos mixtos.
    - **Solución / Regla**: Utilizar la cadena de formato universal `b/bestvideo+bestaudio/best`. `yt-dlp` elegirá automáticamente el mejor flujo de vídeo disponible sin fallar por restricción de extensión.
 2. **Fallo**: `Failed to extract any player response` al usar cookies junto con `player_skip=webpage`. El modificador `player_skip=webpage` impedía que YouTube validase los tokens de sesión de las cookies enviadas.
    - **Solución / Regla**: Evaluar `hasCookies`: si hay cookies (`hasCookies === true`), enviar `--cookies cookies.txt --extractor-args "youtube:player_client=web,android"` (con descarga de página para validar la sesión). Si no hay cookies, emplear `player_client=android,ios;player_skip=webpage`.
