@@ -21,7 +21,9 @@ Este archivo representa la **MEMORIA LITERARIA VIVA DEL AGENTE**. Aquí se regis
 ---
 
 ## ⚠️ 3. FALLOS COMETIDOS Y CÓMO EVITARLOS
-1. **Fallo**: Binarios corruptos en `/tmp` por redirecciones HTTP 302 no seguidas recursivamente por `https.get`. GitHub Releases redirige a AWS S3. Al no seguir todas las redirecciones de forma síncrona, el archivo `/tmp/clipprofit_engine/yt-dlp` quedaba corrupto o trunco, lanzando un error al invocar `spawn()`.
+1. **Fallo**: `Sign in to confirm you’re not a bot` en Render. YouTube bloquea IPs de centros de datos (como las de servidores en la nube) solicitando inicio de sesión o captcha.
+   - **Solución / Regla**: Incluir `--extractor-args "youtube:player_client=ios,android,mweb"` en los argumentos de `yt-dlp`. Las APIs de clientes móviles no requieren verificación web bot y permiten la descarga directa desde servidores remotos.
+2. **Fallo**: Binarios corruptos en `/tmp` por redirecciones HTTP 302 no seguidas recursivamente por `https.get`. GitHub Releases redirige a AWS S3. Al no seguir todas las redirecciones de forma síncrona, el archivo `/tmp/clipprofit_engine/yt-dlp` quedaba corrupto o trunco, lanzando un error al invocar `spawn()`.
    - **Solución / Regla**: Creada la función `downloadFile(url, dest)` con seguimiento recursivo de redirecciones y validación estricta de tamaño (`fs.statSync().size > 1000000`) antes de permitir la ejecución de binarios.
 2. **Fallo**: `Cannot GET /` en Render. Ocurrió por la eliminación accidental de `app.use(express.static(...))` al insertar funciones auxiliares.
    - **Solución / Regla**: Mantener siempre `app.use(express.static(path.join(__dirname, "public")))` y una ruta explícita `app.get("/", ...)` que entregue `index.html`.

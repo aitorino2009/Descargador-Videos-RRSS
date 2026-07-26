@@ -323,6 +323,7 @@ app.post("/api/download", (req, res) => {
     "--progress", 
     "--no-playlist", 
     "--restrict-filenames",
+    "--extractor-args", "youtube:player_client=ios,android,mweb",
     "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
     "--referer", "https://www.google.com/",
     "-o", path.join(finalDir, "%(title)s.%(ext)s")
