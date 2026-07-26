@@ -21,7 +21,9 @@ Este archivo representa la **MEMORIA LITERARIA VIVA DEL AGENTE**. Aquí se regis
 ---
 
 ## ⚠️ 3. FALLOS COMETIDOS Y CÓMO EVITARLOS
-1. **Fallo**: `{"error":"Archivo no encontrado o expirado."}` al descargar en Linux/Render. Ocurrió por 3 razones: (a) En Linux no existía la utilidad `unzip`, haciendo que `downloadFfmpeg()` fallase. Sin `ffmpeg`, `yt-dlp` no podía combinar pistas `bestvideo+bestaudio`. (b) `yt-dlp` elegía formatos separados sin fallback seguro. (c) El servidor marcaba estado `complete` sin verificar la presencia física del archivo final en el disco.
+1. **Fallo**: `No se pudo generar el archivo final en el servidor.` cuando el vídeo descargado de YouTube conservaba etiquetas de formato individual como `.f399.mp4` antes de o en ausencia de fusión por FFmpeg. La expresión regular anterior descartaba estos archivos creyendo que eran temporales.
+   - **Solución / Regla**: Escanear todos los archivos válidos en `finalDir`, dar prioridad a consolidados y usar fallback al primer archivo válido limpiando la etiqueta de formato (`chosenFile.replace(/\.f\d+\./, '.')`).
+2. **Fallo**: `{"error":"Archivo no encontrado o expirado."}` al descargar en Linux/Render. Ocurrió por 3 razones: (a) En Linux no existía la utilidad `unzip`, haciendo que `downloadFfmpeg()` fallase. Sin `ffmpeg`, `yt-dlp` no podía combinar pistas `bestvideo+bestaudio`. (b) `yt-dlp` elegía formatos separados sin fallback seguro. (c) El servidor marcaba estado `complete` sin verificar la presencia física del archivo final en el disco.
    - **Solución / Regla**: (1) Extracción de `ffmpeg.zip` mediante el módulo nativo de `python3` (`python3 -c "import zipfile..."`). (2) Selección adaptable de formatos (`best[ext=mp4]/bestvideo[ext=mp4]+bestaudio/best`). (3) Validación física del archivo en disco antes de marcar `complete`.
 2. **Fallo**: `ReferenceError: HOST is not defined` al arrancar `startServer()`. Se debe a no declarar `const HOST` en el encabezado global de `server.js`.
    - **Solución / Regla**: Definir siempre `isHosted`, `PORT`, `HOST` y `SERVER_TEMP_DIR` al principio de `server.js` antes de cualquier función o middleware.

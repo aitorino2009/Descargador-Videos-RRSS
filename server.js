@@ -360,15 +360,19 @@ app.post("/api/download", (req, res) => {
       // Buscar el archivo final completo en finalDir
       try {
         if (fs.existsSync(finalDir)) {
-          const files = fs.readdirSync(finalDir).filter(f => 
+          const allFiles = fs.readdirSync(finalDir).filter(f => 
             !f.endsWith('.part') && 
             !f.endsWith('.ytdl') && 
-            !f.endsWith('.temp') &&
-            !/\.f\d+\./.test(f)
+            !f.endsWith('.temp')
           );
-          if (files.length > 0) {
-            state.filename = files[0];
-            state.fullPath = path.join(finalDir, files[0]);
+          
+          if (allFiles.length > 0) {
+            // Priorizar archivos consolidados que no tengan la etiqueta .f\d+.
+            const mergedFiles = allFiles.filter(f => !/\.f\d+\./.test(f));
+            const chosenFile = mergedFiles.length > 0 ? mergedFiles[0] : allFiles[0];
+
+            state.filename = chosenFile.replace(/\.f\d+\./, '.');
+            state.fullPath = path.join(finalDir, chosenFile);
             state.status = "complete";
             state.percent = 100;
           } else {
