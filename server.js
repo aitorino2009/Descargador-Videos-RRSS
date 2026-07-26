@@ -224,8 +224,23 @@ function openFolder(folder) {
 //  Express App
 // ─────────────────────────────────────────
 
-app.use(express.json());
-app.use(express.static(path.join(__dirname, "public")));
+const debugLogs = [];
+function addDebug(msg) {
+  const entry = `[${new Date().toISOString()}] ${msg}`;
+  debugLogs.push(entry);
+  if (debugLogs.length > 100) debugLogs.shift();
+  console.log(entry);
+}
+
+app.get("/api/debug-logs", (req, res) => {
+  res.json({
+    isHosted,
+    ytDlpStatus,
+    ffmpegStatus,
+    activeDownloads: Array.from(activeDownloads.entries()).map(([k, v]) => ({ id: k, ...v })),
+    logs: debugLogs
+  });
+});
 
 app.get("/api/status", (req, res) => res.json({ ytdlp: ytDlpStatus, ffmpeg: ffmpegStatus, isHosted }));
 app.get("/api/config", (req, res) => res.json(loadConfig()));
@@ -287,6 +302,7 @@ app.post("/api/download", (req, res) => {
     "--newline", 
     "--progress", 
     "--no-playlist", 
+    "--restrict-filenames",
     "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
     "--referer", "https://www.google.com/",
     "-o", path.join(finalDir, "%(title)s.%(ext)s")
@@ -308,6 +324,9 @@ app.post("/api/download", (req, res) => {
     args.push("-f", "best[ext=mp4]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best/b");
   }
 
+  addDebug(`Iniciando descarga ${downloadId} -> ${url}`);
+  addDebug(`Comando: ${getYtDlpPath()} ${args.join(" ")}`);
+
   const proc = spawn(getYtDlpPath(), args);
   const state = { 
     percent: 0, 
@@ -324,7 +343,7 @@ app.post("/api/download", (req, res) => {
 
   proc.stdout.on("data", (data) => {
     const line = data.toString();
-    console.log(`[yt-dlp] ${line.trim()}`);
+    addDebug(`[STDOUT] ${line.trim()}`);
     const m = line.match(/(\d+\.\d+)% of .* at\s+(.*) ETA (.*)/);
     if (m) {
       state.percent = parseFloat(m[1]);
@@ -341,21 +360,21 @@ app.post("/api/download", (req, res) => {
 
   proc.stderr.on("data", (data) => {
     const errLine = data.toString().trim();
-    console.error(`[yt-dlp ERROR] ${errLine}`);
-    if (errLine.includes("ERROR:")) {
+    addDebug(`[STDERR] ${errLine}`);
+    if (errLine.includes("ERROR:") || errLine.includes("Error")) {
       state.message = errLine;
     }
   });
 
   proc.on("error", (err) => {
-    console.error(`[!] Error al iniciar yt-dlp: ${err.message}`);
+    addDebug(`[PROC ERROR] ${err.message}`);
     state.status = "error";
     state.message = err.message;
     logError(err);
   });
 
   proc.on("close", (code) => {
-    console.log(`[yt-dlp] Proceso finalizado con código ${code}`);
+    addDebug(`[PROC CLOSE] Código: ${code}`);
     if (code === 0) {
       // Buscar el archivo final completo en finalDir
       try {
@@ -366,8 +385,9 @@ app.post("/api/download", (req, res) => {
             !f.endsWith('.temp')
           );
           
+          addDebug(`Archivos encontrados en ${finalDir}: ${JSON.stringify(allFiles)}`);
+
           if (allFiles.length > 0) {
-            // Priorizar archivos consolidados que no tengan la etiqueta .f\d+.
             const mergedFiles = allFiles.filter(f => !/\.f\d+\./.test(f));
             const chosenFile = mergedFiles.length > 0 ? mergedFiles[0] : allFiles[0];
 
@@ -375,17 +395,21 @@ app.post("/api/download", (req, res) => {
             state.fullPath = path.join(finalDir, chosenFile);
             state.status = "complete";
             state.percent = 100;
+            addDebug(`Descarga completada con éxito: ${state.fullPath}`);
           } else {
             state.status = "error";
             state.message = "No se pudo generar el archivo final en el servidor.";
+            addDebug(`ERROR: Ningún archivo final en ${finalDir}`);
           }
         } else {
           state.status = "error";
           state.message = "Directorio temporal no encontrado.";
+          addDebug(`ERROR: Directorio no existe ${finalDir}`);
         }
       } catch (err) {
         state.status = "error";
         state.message = err.message;
+        addDebug(`CATCH ERROR: ${err.message}`);
       }
 
       // En modo hosted, programar limpieza tras 30 minutos si el usuario no descarga
