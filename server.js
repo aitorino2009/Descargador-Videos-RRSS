@@ -28,6 +28,8 @@ try {
     fs.rmSync(SERVER_TEMP_DIR, { recursive: true, force: true });
   }
   fs.mkdirSync(SERVER_TEMP_DIR, { recursive: true });
+} catch (_) {}
+
 const COOKIES_FILE = path.join(__dirname, "cookies.txt");
 
 function initCookies() {

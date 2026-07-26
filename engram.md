@@ -22,7 +22,9 @@ Este archivo representa la **MEMORIA LITERARIA VIVA DEL AGENTE**. Aquí se regis
 ---
 
 ## ⚠️ 3. FALLOS COMETIDOS Y CÓMO EVITARLOS
-1. **Fallo**: `HTTP Error 429: Too Many Requests` seguido de `Sign in to confirm you’re not a bot` en Render. Ocurre porque la IP del datacenter de Render recibe un bloqueo 429 al solicitar la página HTML `youtube.com/watch?v=...`.
+1. **Fallo**: `SyntaxError: Unexpected end of input` en `server.js`. Ocurrió al dejar sin cerrar el bloque `try {` de la limpieza inicial de `SERVER_TEMP_DIR` al insertar las funciones de cookies.
+   - **Solución / Regla**: Ejecutar siempre `node --check server.js` localmente antes de hacer push a producción para verificar la sintaxis de JavaScript.
+2. **Fallo**: `HTTP Error 429: Too Many Requests` seguido de `Sign in to confirm you’re not a bot` en Render. Ocurre porque la IP del datacenter de Render recibe un bloqueo 429 al solicitar la página HTML `youtube.com/watch?v=...`.
    - **Solución / Regla**: Incluir `--extractor-args "youtube:player_client=android,ios;player_skip=webpage"` en los argumentos de `yt-dlp`. El parámetro `player_skip=webpage` omite por completo la descarga de la página HTML, conectando directamente a las APIs nativas de Android/iOS de YouTube, eliminando el Error 429 y los desvíos antibot.
 2. **Fallo**: Binarios corruptos en `/tmp` por redirecciones HTTP 302 no seguidas recursivamente por `https.get`. GitHub Releases redirige a AWS S3. Al no seguir todas las redirecciones de forma síncrona, el archivo `/tmp/clipprofit_engine/yt-dlp` quedaba corrupto o trunco, lanzando un error al invocar `spawn()`.
    - **Solución / Regla**: Creada la función `downloadFile(url, dest)` con seguimiento recursivo de redirecciones y validación estricta de tamaño (`fs.statSync().size > 1000000`) antes de permitir la ejecución de binarios.
