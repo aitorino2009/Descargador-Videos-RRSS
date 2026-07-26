@@ -330,7 +330,7 @@ app.post("/api/download", (req, res) => {
     }
     const destMatch = line.match(/(?:Destination:|(?:Merging formats into ")|(?:has already been downloaded)) (.*)/);
     if (destMatch) {
-      let cleaned = destMatch[1].replace(/^"|"$/g, '').trim();
+      let cleaned = destMatch[1].replace(/[\r\n"']/g, '').trim();
       state.filename = path.basename(cleaned);
       state.fullPath = cleaned;
     }
@@ -351,16 +351,21 @@ app.post("/api/download", (req, res) => {
     state.status = (code === 0) ? "complete" : "error";
     if (code === 0) {
       state.percent = 100;
-      // Si no se capturó la ruta exacta del archivo, buscarlo en finalDir
-      if (!state.fullPath || !fs.existsSync(state.fullPath)) {
-        try {
-          const files = fs.readdirSync(finalDir).filter(f => !f.endsWith('.part') && !f.endsWith('.ytdl'));
+      // Buscar siempre el archivo final completo en finalDir
+      try {
+        if (fs.existsSync(finalDir)) {
+          const files = fs.readdirSync(finalDir).filter(f => 
+            !f.endsWith('.part') && 
+            !f.endsWith('.ytdl') && 
+            !f.endsWith('.temp') &&
+            !/\.f\d+\./.test(f)
+          );
           if (files.length > 0) {
             state.filename = files[0];
             state.fullPath = path.join(finalDir, files[0]);
           }
-        } catch (_) {}
-      }
+        }
+      } catch (_) {}
 
       // En modo hosted, programar limpieza tras 30 minutos si el usuario no descarga
       if (isHosted) {

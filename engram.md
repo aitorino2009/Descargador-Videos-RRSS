@@ -21,13 +21,15 @@ Este archivo representa la **MEMORIA LITERARIA VIVA DEL AGENTE**. Aquí se regis
 ---
 
 ## ⚠️ 3. FALLOS COMETIDOS Y CÓMO EVITARLOS
-1. **Fallo**: `ReferenceError: HOST is not defined` al arrancar `startServer()`. Se debe a no declarar `const HOST` en el encabezado global de `server.js`.
+1. **Fallo**: `{"error":"Archivo no encontrado o expirado."}` al descargar vía navegador. Se debía a dos causas: (a) la salida de `yt-dlp` al combinar vídeo y audio incluye comillas y partes intermedias (`.f137.mp4`), lo que corrompía la ruta `state.fullPath`. (b) la tarjeta "Carpeta de destino" no tenía `id="settingsCard"`, por lo que el script no la ocultaba en modo servidor.
+   - **Solución / Regla**: Añadido `id="settingsCard"` en `index.html` e inspección directa con `fs.readdirSync(finalDir)` descartando fragmentos temporales en `proc.on("close")` para garantizar la ruta 100% correcta.
+2. **Fallo**: `ReferenceError: HOST is not defined` al arrancar `startServer()`. Se debe a no declarar `const HOST` en el encabezado global de `server.js`.
    - **Solución / Regla**: Definir siempre `isHosted`, `PORT`, `HOST` y `SERVER_TEMP_DIR` al principio de `server.js` antes de cualquier función o middleware.
-2. **Fallo**: Render fallaba en la fase de Build (38 segundos) porque ejecutaba automáticamente `npm run build`, y allí estaba configurado `pkg . --out-path dist`. Al no estar `pkg` instalado en el servidor de Render, el despliegue daba error `pkg: command not found`.
+3. **Fallo**: Render fallaba en la fase de Build (38 segundos) porque ejecutaba automáticamente `npm run build`, y allí estaba configurado `pkg . --out-path dist`. Al no estar `pkg` instalado en el servidor de Render, el despliegue daba error `pkg: command not found`.
    - **Solución / Regla**: En `package.json`, el script `"build"` debe ser `"echo 'No build step needed'"` para que los servidores en la nube compilen sin error, y la compilación de ejecutables portátiles pasa a ser `"build:exe"`.
-3. **Fallo**: Nombrar inicialmente especificaciones y habilidades en inglés (`01-web-server-hosting.md`, `web-downloader/`).
+4. **Fallo**: Nombrar inicialmente especificaciones y habilidades en inglés (`01-web-server-hosting.md`, `web-downloader/`).
    - **Solución / Regla**: Toda spec o skill creada debe bautizarse en castellano (ej: `.agent/specs/01-alojamiento-servidor-web.md`, `.agent/skills/descargador-web/`).
-4. **Fallo**: Intentar usar selectores de carpeta de sistema local cuando la app corre en un servidor remoto.
+5. **Fallo**: Intentar usar selectores de carpeta de sistema local cuando la app corre en un servidor remoto.
    - **Solución / Regla**: Comprobar siempre `if (isHosted)` y devolver respuesta nula o deshabilitar elementos de ruta local en la interfaz web.
 
 ---
