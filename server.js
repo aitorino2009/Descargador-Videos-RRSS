@@ -28,7 +28,21 @@ try {
     fs.rmSync(SERVER_TEMP_DIR, { recursive: true, force: true });
   }
   fs.mkdirSync(SERVER_TEMP_DIR, { recursive: true });
-} catch (_) {}
+const COOKIES_FILE = path.join(__dirname, "cookies.txt");
+
+function initCookies() {
+  if (process.env.YOUTUBE_COOKIES) {
+    try {
+      fs.writeFileSync(COOKIES_FILE, process.env.YOUTUBE_COOKIES, "utf8");
+      console.log("  ✓  Cookies de YouTube cargadas desde variable YOUTUBE_COOKIES.");
+    } catch (err) {
+      console.error("  [!] Error escribiendo cookies.txt:", err.message);
+    }
+  } else if (fs.existsSync(COOKIES_FILE) && fs.statSync(COOKIES_FILE).size > 10) {
+    console.log("  ✓  Archivo cookies.txt detectado y activo.");
+  }
+}
+initCookies();
 
 function getYtDlpBinName() {
   if (process.platform === "win32") return "yt-dlp.exe";
@@ -328,7 +342,11 @@ app.post("/api/download", (req, res) => {
     "--referer", "https://www.google.com/",
     "-o", path.join(finalDir, "%(title)s.%(ext)s")
   ];
-  
+
+  if (fs.existsSync(COOKIES_FILE) && fs.statSync(COOKIES_FILE).size > 10) {
+    args.push("--cookies", COOKIES_FILE);
+  }
+
   const ffmpegP = getFfmpegPath();
   if (ffmpegStatus === "ready" || ffmpegStatus === "system") {
     if (fs.existsSync(ffmpegP)) {

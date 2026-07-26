@@ -13,6 +13,7 @@ Este archivo representa la **MEMORIA LITERARIA VIVA DEL AGENTE**. Aquí se regis
 ---
 
 ## 🎓 2. APRENDIZAJES RECIENTES
+- **Soporte de Cookies de Autenticación de YouTube**: En el servidor web (`isHosted`), si existe `cookies.txt` o la variable de entorno `YOUTUBE_COOKIES`, `yt-dlp` pasa automáticamente el argumento `--cookies cookies.txt`. Esto permite a Render autenticarse como usuario verificado y omitir las restricciones de IP de centros de datos. `cookies.txt` está incluido en `.gitignore` para proteger la privacidad del usuario.
 - **Aislamiento por ID de Sesión**: Para descargas concurrentes en el servidor web, guardar cada procesamiento en una subcarpeta `%TEMP%/clipprofit_web_downloads/:downloadId` garantiza que varios usuarios no se pisen los archivos ni los nombres.
 - **Ruta de Entrega HTTP Directa**: Endpoint `GET /api/file/:id` utilizando `res.download()` envía las cabeceras `Content-Disposition: attachment` forzando la descarga directa en el navegador del usuario en cualquier dispositivo (móvil, PC, tablet).
 - **Extracción Fiable para Instagram y TikTok**: Añadidos flags de `--user-agent` de Chrome moderno y `--referer`, junto con la selección flexible de formato `-f b/bestvideo+bestaudio/best`. Esto evita bloqueos 403 y errores de extracción en Reels de Instagram y TikToks.
