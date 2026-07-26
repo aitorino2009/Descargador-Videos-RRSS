@@ -1,4 +1,4 @@
-# 🎬 Descargador de videos universal para ClipProfit (Whop)
+# 🎬 Descargador de videos universal
 
 ![Version](https://img.shields.io/badge/version-1.0.0-orange.svg)
 ![License](https://img.shields.io/badge/license-CC%20BY%204.0-blue.svg)
