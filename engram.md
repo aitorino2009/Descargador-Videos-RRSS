@@ -22,7 +22,9 @@ Este archivo representa la **MEMORIA LITERARIA VIVA DEL AGENTE**. Aquí se regis
 ---
 
 ## ⚠️ 3. FALLOS COMETIDOS Y CÓMO EVITARLOS
-1. **Fallo**: `Failed to extract any player response` al usar cookies junto con `player_skip=webpage`. El modificador `player_skip=webpage` impedía que YouTube validase los tokens de sesión de las cookies enviadas.
+1. **Fallo**: `Requested format is not available` al pedir descargas de YouTube. Ocurrió porque la cadena de formato forzaba la extensión rígida `best[ext=mp4]`, la cual no existe directamente en vídeos de alta resolución donde YouTube utiliza WebM/VP9 o flujos mixtos.
+   - **Solución / Regla**: Utilizar la cadena de formato universal `b/bestvideo+bestaudio/best`. `yt-dlp` elegirá automáticamente el mejor flujo de vídeo disponible sin fallar por restricción de extensión.
+2. **Fallo**: `Failed to extract any player response` al usar cookies junto con `player_skip=webpage`. El modificador `player_skip=webpage` impedía que YouTube validase los tokens de sesión de las cookies enviadas.
    - **Solución / Regla**: Evaluar `hasCookies`: si hay cookies (`hasCookies === true`), enviar `--cookies cookies.txt --extractor-args "youtube:player_client=web,android"` (con descarga de página para validar la sesión). Si no hay cookies, emplear `player_client=android,ios;player_skip=webpage`.
 2. **Fallo**: `SyntaxError: Unexpected end of input` en `server.js`. Ocurrió al dejar sin cerrar el bloque `try {` de la limpieza inicial de `SERVER_TEMP_DIR` al insertar las funciones de cookies.
    - **Solución / Regla**: Ejecutar siempre `node --check server.js` localmente antes de hacer push a producción para verificar la sintaxis de JavaScript.

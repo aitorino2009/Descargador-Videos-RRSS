@@ -365,8 +365,8 @@ app.post("/api/download", (req, res) => {
   if (mode === "audio") {
     args.push("-x", "--audio-format", "mp3");
   } else {
-    // Formato adaptable prioritario
-    args.push("-f", "best[ext=mp4]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best/b");
+    // Formato adaptable universal
+    args.push("-f", "b/bestvideo+bestaudio/best");
   }
 
   addDebug(`Iniciando descarga ${downloadId} -> ${url}`);
