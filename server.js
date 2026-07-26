@@ -215,7 +215,7 @@ function openFolder(folder) {
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 
-app.get("/api/status", (req, res) => res.json({ ytdlp: ytDlpStatus }));
+app.get("/api/status", (req, res) => res.json({ ytdlp: ytDlpStatus, ffmpeg: ffmpegStatus, isHosted }));
 app.get("/api/config", (req, res) => res.json(loadConfig()));
 app.post("/api/config", (req, res) => {
   saveConfig(req.body);
@@ -231,7 +231,7 @@ app.post("/api/info", (req, res) => {
   proc.stdout.on("data", (d) => (stdout += d));
   proc.stderr.on("data", (d) => (stderr += d));
   proc.on("close", (code) => {
-    if (code !== 0) return res.status(500).json({ error: stderr });
+    if (code !== 0) return res.status(500).json({ error: stderr || "No se pudo obtener la información del vídeo" });
     try {
       const info = JSON.parse(stdout);
       res.json({
@@ -253,24 +253,38 @@ app.post("/api/download", (req, res) => {
   const cfg = loadConfig();
   const downloadId = crypto.randomUUID();
 
-  const now = new Date();
-  const d = String(now.getDate()).padStart(2, '0');
-  const m = String(now.getMonth() + 1).padStart(2, '0');
-  const y = String(now.getFullYear()).slice(-2);
-  const dateStr = `${d}-${m}-${y}`;
-  let platform = "Otros";
-  if (url.includes("youtube.com") || url.includes("youtu.be")) platform = "YouTube";
-  else if (url.includes("instagram.com")) platform = "Instagram";
-  else if (url.includes("tiktok.com")) platform = "TikTok";
+  let finalDir;
+  if (isHosted) {
+    finalDir = path.join(SERVER_TEMP_DIR, downloadId);
+  } else {
+    const now = new Date();
+    const d = String(now.getDate()).padStart(2, '0');
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    const y = String(now.getFullYear()).slice(-2);
+    const dateStr = `${d}-${m}-${y}`;
+    let platform = "Otros";
+    if (url.includes("youtube.com") || url.includes("youtu.be")) platform = "YouTube";
+    else if (url.includes("instagram.com")) platform = "Instagram";
+    else if (url.includes("tiktok.com")) platform = "TikTok";
+    finalDir = path.join(cfg.download_dir, platform, dateStr);
+  }
 
-  const finalDir = path.join(cfg.download_dir, platform, dateStr);
   try { fs.mkdirSync(finalDir, { recursive: true }); } catch (_) {}
 
-  const args = ["--newline", "--progress", "--no-playlist", "-o", path.join(finalDir, "%(title)s.%(ext)s")];
+  const args = [
+    "--newline", 
+    "--progress", 
+    "--no-playlist", 
+    "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "--referer", "https://www.google.com/",
+    "-o", path.join(finalDir, "%(title)s.%(ext)s")
+  ];
   
-  // Usar FFmpeg local si existe
-  if (ffmpegStatus === "ready") {
-    args.push("--ffmpeg-location", getFfmpegPath());
+  const ffmpegP = getFfmpegPath();
+  if (ffmpegStatus === "ready" || ffmpegStatus === "system") {
+    if (fs.existsSync(ffmpegP)) {
+      args.push("--ffmpeg-location", ffmpegP);
+    }
   }
 
   args.push(url);
@@ -278,11 +292,21 @@ app.post("/api/download", (req, res) => {
   if (mode === "audio") {
     args.push("-x", "--audio-format", "mp3");
   } else {
-    args.push("-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best");
+    // Formato flexible compatible con Instagram, TikTok y YouTube
+    args.push("-f", "b/bestvideo+bestaudio/best");
   }
 
   const proc = spawn(getYtDlpPath(), args);
-  const state = { percent: 0, speed: "", eta: "", filename: "", status: "downloading", directory: finalDir };
+  const state = { 
+    percent: 0, 
+    speed: "", 
+    eta: "", 
+    filename: "", 
+    status: "downloading", 
+    directory: finalDir,
+    fullPath: null,
+    downloadId
+  };
   activeDownloads.set(downloadId, state);
 
   proc.stdout.on("data", (data) => {
@@ -294,8 +318,12 @@ app.post("/api/download", (req, res) => {
       state.speed = m[2];
       state.eta = m[3];
     }
-    const destMatch = line.match(/\[download\] Destination: (.*)/);
-    if (destMatch) state.filename = path.basename(destMatch[1]);
+    const destMatch = line.match(/(?:Destination:|(?:Merging formats into ")|(?:has already been downloaded)) (.*)/);
+    if (destMatch) {
+      let cleaned = destMatch[1].replace(/^"|"$/g, '').trim();
+      state.filename = path.basename(cleaned);
+      state.fullPath = cleaned;
+    }
   });
 
   proc.stderr.on("data", (data) => {
@@ -311,7 +339,30 @@ app.post("/api/download", (req, res) => {
   proc.on("close", (code) => {
     console.log(`[yt-dlp] Proceso finalizado con código ${code}`);
     state.status = (code === 0) ? "complete" : "error";
-    if (code === 0) state.percent = 100;
+    if (code === 0) {
+      state.percent = 100;
+      // Si no se capturó la ruta exacta del archivo, buscarlo en finalDir
+      if (!state.fullPath || !fs.existsSync(state.fullPath)) {
+        try {
+          const files = fs.readdirSync(finalDir).filter(f => !f.endsWith('.part') && !f.endsWith('.ytdl'));
+          if (files.length > 0) {
+            state.filename = files[0];
+            state.fullPath = path.join(finalDir, files[0]);
+          }
+        } catch (_) {}
+      }
+
+      // En modo hosted, programar limpieza tras 30 minutos si el usuario no descarga
+      if (isHosted) {
+        setTimeout(() => {
+          try {
+            if (fs.existsSync(finalDir)) {
+              fs.rmSync(finalDir, { recursive: true, force: true });
+            }
+          } catch (_) {}
+        }, 30 * 60 * 1000);
+      }
+    }
   });
 
   res.json({ download_id: downloadId });
@@ -330,20 +381,46 @@ app.get("/api/progress/:id", (req, res) => {
     if (state.status === "complete" || state.status === "error") {
       clearInterval(timer);
       res.write(`data: ${JSON.stringify({ type: state.status, ...state })}\n\n`);
-      setTimeout(() => activeDownloads.delete(id), 5000);
+      if (!isHosted) {
+        setTimeout(() => activeDownloads.delete(id), 5000);
+      }
     }
   }, 800);
   req.on("close", () => clearInterval(timer));
 });
 
+app.get("/api/file/:id", (req, res) => {
+  const state = activeDownloads.get(req.params.id);
+  if (!state || !state.fullPath || !fs.existsSync(state.fullPath)) {
+    return res.status(404).json({ error: "Archivo no encontrado o expirado." });
+  }
+
+  const filename = state.filename || path.basename(state.fullPath);
+  res.download(state.fullPath, filename, (err) => {
+    if (err) {
+      console.error(`[!] Error enviando archivo ${req.params.id}:`, err);
+    }
+    // En modo hosted, limpiar carpeta temporal 10 segundos después de entregar el archivo
+    if (isHosted && state.directory && state.directory.startsWith(SERVER_TEMP_DIR)) {
+      setTimeout(() => {
+        try {
+          if (fs.existsSync(state.directory)) {
+            fs.rmSync(state.directory, { recursive: true, force: true });
+          }
+        } catch (_) {}
+      }, 10000);
+    }
+  });
+});
+
 app.post("/api/browse-folder", (req, res) => {
+  if (isHosted) return res.json({ folder: null, isHosted: true });
   let cmd = "";
   if (process.platform === "win32") {
     cmd = `powershell.exe -NoProfile -Command "Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.FolderBrowserDialog; $d.Description = 'Selecciona la carpeta de destino'; if ($d.ShowDialog() -eq 'OK') { $d.SelectedPath }"`;
   } else if (process.platform === "darwin") {
     cmd = `osascript -e 'POSIX path of (choose folder with prompt "Selecciona la carpeta de destino")'`;
   } else {
-    // Linux: Intentamos zenity, kdialog o un fallback de terminal (aunque terminal no sirve para devolver la ruta fácilmente)
     cmd = `zenity --file-selection --directory --title="Selecciona la carpeta de destino" || kdialog --getexistingdirectory .`;
   }
 
@@ -356,6 +433,7 @@ app.post("/api/browse-folder", (req, res) => {
 });
 
 app.post("/api/open-folder", (req, res) => {
+  if (isHosted) return res.json({ ok: false, error: "No disponible en modo servidor web" });
   const cfg = loadConfig();
   const folder = req.body.folder || cfg.download_dir || getDefaultDownloadDir();
   try { fs.mkdirSync(folder, { recursive: true }); } catch (_) {}
@@ -391,37 +469,41 @@ function startServer() {
       console.log(` [!] Puerto ${PORT} ocupado. Liberando...`);
       const cmd = process.platform === 'win32' ? `taskkill /F /FI "PID ne ${process.pid}" /IM node.exe` : `fuser -k ${PORT}/tcp`;
       exec(cmd, () => {
-        setTimeout(() => server.listen(PORT, "127.0.0.1"), 1000);
+        setTimeout(() => server.listen(PORT, HOST), 1000);
       });
     } else {
       logError(e);
     }
   });
 
-  server.listen(PORT, "127.0.0.1", () => {
+  server.listen(PORT, HOST, () => {
     console.log(`====================================================`);
     console.log(`  🎬  CLIPPROFIT DOWNLOADER  —  Iniciando...`);
     console.log(`====================================================`);
-    console.log(`  ✓  Servidor en: http://127.0.0.1:${PORT}`);
-    console.log(`  ✓  El navegador se abrirá automáticamente.`);
+    console.log(`  ✓  Modo: ${isHosted ? "Servidor Web (Hosted)" : "Escritorio Local"}`);
+    console.log(`  ✓  Servidor escuchando en: http://${HOST}:${PORT}`);
+    if (!isHosted) {
+      console.log(`  ✓  El navegador se abrirá automáticamente.`);
+    }
     console.log(`====================================================`);
     
-    const url = `http://127.0.0.1:${PORT}`;
-    if (process.platform === "win32") {
-      exec(`start ${url}`);
-    } else if (process.platform === "darwin") {
-      exec(`open ${url}`);
-    } else {
-      // Linux: Intentar xdg-open, firefox, chrome, en orden
-      const browserCmds = [
-        `xdg-open "${url}"`,
-        `firefox "${url}"`,
-        `google-chrome-stable "${url}"`,
-        `google-chrome "${url}"`,
-        `chromium "${url}"`,
-        `brave "${url}"`
-      ];
-      exec(browserCmds.join(" || "));
+    if (!isHosted) {
+      const url = `http://127.0.0.1:${PORT}`;
+      if (process.platform === "win32") {
+        exec(`start ${url}`);
+      } else if (process.platform === "darwin") {
+        exec(`open ${url}`);
+      } else {
+        const browserCmds = [
+          `xdg-open "${url}"`,
+          `firefox "${url}"`,
+          `google-chrome-stable "${url}"`,
+          `google-chrome "${url}"`,
+          `chromium "${url}"`,
+          `brave "${url}"`
+        ];
+        exec(browserCmds.join(" || "));
+      }
     }
   });
 }
