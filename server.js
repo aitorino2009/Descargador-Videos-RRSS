@@ -10,15 +10,25 @@ const http = require("http");
 const crypto = require("crypto");
 
 const app = express();
-const PORT = 7432;
+const isHosted = process.env.HOSTED === "true" || process.env.NODE_ENV === "production" || !!process.env.PORT;
+const PORT = process.env.PORT || 7432;
+const HOST = isHosted ? "0.0.0.0" : "127.0.0.1";
 
 // ─────────────────────────────────────────
 //  Rutas y config
 // ─────────────────────────────────────────
 
-// Motor invisible en la carpeta temporal del sistema
 const BIN_DIR = path.join(os.tmpdir(), "clipprofit_engine");
 const CONFIG_FILE = path.join(os.homedir(), ".videodl_config.json");
+const SERVER_TEMP_DIR = path.join(os.tmpdir(), "clipprofit_web_downloads");
+
+// Limpiar carpeta temporal del servidor al arrancar
+try {
+  if (fs.existsSync(SERVER_TEMP_DIR)) {
+    fs.rmSync(SERVER_TEMP_DIR, { recursive: true, force: true });
+  }
+  fs.mkdirSync(SERVER_TEMP_DIR, { recursive: true });
+} catch (_) {}
 
 function getYtDlpBinName() {
   if (process.platform === "win32") return "yt-dlp.exe";
