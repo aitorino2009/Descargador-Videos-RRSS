@@ -91,11 +91,43 @@ function saveConfig(cfg) {
   } catch (_) {}
 }
 
+function downloadFile(url, dest) {
+  return new Promise((resolve, reject) => {
+    const request = (currentUrl) => {
+      https.get(currentUrl, (res) => {
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          return request(res.headers.location);
+        }
+        if (res.statusCode !== 200) {
+          return reject(new Error(`HTTP ${res.statusCode} al descargar ${currentUrl}`));
+        }
+        const file = fs.createWriteStream(dest);
+        res.pipe(file);
+        file.on("finish", () => {
+          file.close(() => resolve());
+        });
+        file.on("error", (err) => {
+          try { fs.unlinkSync(dest); } catch (_) {}
+          reject(err);
+        });
+      }).on("error", (err) => {
+        try { fs.unlinkSync(dest); } catch (_) {}
+        reject(err);
+      });
+    };
+    request(url);
+  });
+}
+
 async function downloadYtDlp() {
-  if (fs.existsSync(getYtDlpPath())) {
-    ytDlpStatus = "ready";
-    return;
-  }
+  const targetPath = path.join(BIN_DIR, getYtDlpBinName());
+  try {
+    if (fs.existsSync(targetPath) && fs.statSync(targetPath).size > 1000000) {
+      ytDlpStatus = "ready";
+      return;
+    }
+  } catch (_) {}
+
   ytDlpStatus = "downloading";
   if (!fs.existsSync(BIN_DIR)) fs.mkdirSync(BIN_DIR, { recursive: true });
 
@@ -107,30 +139,20 @@ async function downloadYtDlp() {
   };
 
   const url = urls[process.platform] || urls.linux;
-  const dest = getYtDlpPath();
 
-  console.log(` [i] Descargando yt-dlp desde: ${url}`);
-  return new Promise((resolve, reject) => {
-    const file = fs.createWriteStream(dest);
-    https.get(url, (res) => {
-      if (res.statusCode === 302 || res.statusCode === 301) {
-        https.get(res.headers.location, (res2) => res2.pipe(file));
-      } else {
-        res.pipe(file);
-      }
-      file.on("finish", () => {
-        file.close();
-        if (process.platform !== "win32") fs.chmodSync(dest, "755");
-        ytDlpStatus = "ready";
-        console.log("  ✓  yt-dlp descargado.");
-        resolve();
-      });
-    }).on("error", (err) => {
-      fs.unlink(dest, () => {});
-      ytDlpStatus = "error";
-      reject(err);
-    });
-  });
+  addDebug(`[i] Descargando yt-dlp desde: ${url}`);
+  try {
+    await downloadFile(url, targetPath);
+    if (process.platform !== "win32") {
+      try { fs.chmodSync(targetPath, "755"); } catch (_) {}
+    }
+    ytDlpStatus = "ready";
+    addDebug("  ✓  yt-dlp descargado correctamente.");
+  } catch (err) {
+    ytDlpStatus = "error";
+    addDebug(` [X] Error descargando yt-dlp: ${err.message}`);
+    throw err;
+  }
 }
 
 async function downloadFfmpeg() {
@@ -138,7 +160,7 @@ async function downloadFfmpeg() {
   if (isReady && ffmpegStatus !== "missing") return;
 
   ffmpegStatus = "downloading";
-  console.log(" [i] FFmpeg no detectado. Iniciando descarga del motor de medios...");
+  addDebug("[i] FFmpeg no detectado. Iniciando descarga del motor de medios...");
   
   const urls = {
     win32: "https://github.com/ffbinaries/ffbinaries-prebuilt/releases/download/v6.1/ffmpeg-6.1-win-64.zip",
@@ -149,47 +171,38 @@ async function downloadFfmpeg() {
   const url = urls[process.platform] || urls.linux;
   const zipDest = path.join(BIN_DIR, "ffmpeg.zip");
 
-  return new Promise((resolve, reject) => {
-    const file = fs.createWriteStream(zipDest);
-    https.get(url, (res) => {
-      if (res.statusCode === 302 || res.statusCode === 301) {
-        https.get(res.headers.location, (res2) => res2.pipe(file));
-      } else {
-        res.pipe(file);
-      }
-      file.on("finish", () => {
-        file.close();
-        console.log(" [i] Extrayendo FFmpeg...");
-        
-        let extractCmd = "";
-        if (process.platform === "win32") {
-          extractCmd = `powershell -Command "Expand-Archive -Path '${zipDest}' -DestinationPath '${BIN_DIR}' -Force"`;
-        } else {
-          extractCmd = `python3 -c "import zipfile; zipfile.ZipFile('${zipDest}').extractall('${BIN_DIR}')" || unzip -o "${zipDest}" -d "${BIN_DIR}"`;
-        }
+  try {
+    await downloadFile(url, zipDest);
+    addDebug(" [i] Extrayendo FFmpeg...");
+    
+    let extractCmd = "";
+    if (process.platform === "win32") {
+      extractCmd = `powershell -Command "Expand-Archive -Path '${zipDest}' -DestinationPath '${BIN_DIR}' -Force"`;
+    } else {
+      extractCmd = `python3 -c "import zipfile; zipfile.ZipFile('${zipDest}').extractall('${BIN_DIR}')" || unzip -o "${zipDest}" -d "${BIN_DIR}"`;
+    }
 
-        exec(extractCmd, (err) => {
-          fs.unlink(zipDest, () => {});
-          if (err) {
-            console.error(" [X] Error extrayendo FFmpeg. Revisa los permisos.");
-            ffmpegStatus = "error";
-            reject(err);
-          } else {
-            if (process.platform !== "win32") {
-              try { fs.chmodSync(getFfmpegPath(), "755"); } catch (_) {}
-            }
-            ffmpegStatus = "ready";
-            console.log("  ✓  FFmpeg listo.");
-            resolve();
+    await new Promise((resolve, reject) => {
+      exec(extractCmd, (err) => {
+        try { fs.unlinkSync(zipDest); } catch (_) {}
+        if (err) {
+          addDebug(` [X] Error extrayendo FFmpeg: ${err.message}`);
+          ffmpegStatus = "error";
+          reject(err);
+        } else {
+          if (process.platform !== "win32") {
+            try { fs.chmodSync(getFfmpegPath(), "755"); } catch (_) {}
           }
-        });
+          ffmpegStatus = "ready";
+          addDebug("  ✓  FFmpeg listo.");
+          resolve();
+        }
       });
-    }).on("error", (err) => {
-      fs.unlink(zipDest, () => {});
-      ffmpegStatus = "error";
-      reject(err);
     });
-  });
+  } catch (err) {
+    ffmpegStatus = "error";
+    addDebug(` [X] Error en descarga de FFmpeg: ${err.message}`);
+  }
 }
 
 function openFolder(folder) {

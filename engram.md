@@ -21,7 +21,9 @@ Este archivo representa la **MEMORIA LITERARIA VIVA DEL AGENTE**. Aquí se regis
 ---
 
 ## ⚠️ 3. FALLOS COMETIDOS Y CÓMO EVITARLOS
-1. **Fallo**: `Cannot GET /` en Render. Ocurrió por la eliminación accidental de `app.use(express.static(...))` al insertar funciones auxiliares.
+1. **Fallo**: Binarios corruptos en `/tmp` por redirecciones HTTP 302 no seguidas recursivamente por `https.get`. GitHub Releases redirige a AWS S3. Al no seguir todas las redirecciones de forma síncrona, el archivo `/tmp/clipprofit_engine/yt-dlp` quedaba corrupto o trunco, lanzando un error al invocar `spawn()`.
+   - **Solución / Regla**: Creada la función `downloadFile(url, dest)` con seguimiento recursivo de redirecciones y validación estricta de tamaño (`fs.statSync().size > 1000000`) antes de permitir la ejecución de binarios.
+2. **Fallo**: `Cannot GET /` en Render. Ocurrió por la eliminación accidental de `app.use(express.static(...))` al insertar funciones auxiliares.
    - **Solución / Regla**: Mantener siempre `app.use(express.static(path.join(__dirname, "public")))` y una ruta explícita `app.get("/", ...)` que entregue `index.html`.
 2. **Fallo**: `No se pudo generar el archivo final en el servidor.` cuando el vídeo descargado de YouTube conservaba etiquetas de formato individual como `.f399.mp4` antes de o en ausencia de fusión por FFmpeg. La expresión regular anterior descartaba estos archivos creyendo que eran temporales.
    - **Solución / Regla**: Escanear todos los archivos válidos en `finalDir`, dar prioridad a consolidados y usar fallback al primer archivo válido limpiando la etiqueta de formato (`chosenFile.replace(/\.f\d+\./, '.')`).
