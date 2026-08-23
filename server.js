@@ -10,15 +10,41 @@ const http = require("http");
 const crypto = require("crypto");
 
 const app = express();
-const PORT = 7432;
+const isHosted = process.env.HOSTED === "true" || process.env.NODE_ENV === "production" || !!process.env.PORT;
+const PORT = process.env.PORT || 7432;
+const HOST = isHosted ? "0.0.0.0" : "127.0.0.1";
 
 // ─────────────────────────────────────────
 //  Rutas y config
 // ─────────────────────────────────────────
 
-// Motor invisible en la carpeta temporal del sistema
 const BIN_DIR = path.join(os.tmpdir(), "clipprofit_engine");
 const CONFIG_FILE = path.join(os.homedir(), ".videodl_config.json");
+const SERVER_TEMP_DIR = path.join(os.tmpdir(), "clipprofit_web_downloads");
+
+// Limpiar carpeta temporal del servidor al arrancar
+try {
+  if (fs.existsSync(SERVER_TEMP_DIR)) {
+    fs.rmSync(SERVER_TEMP_DIR, { recursive: true, force: true });
+  }
+  fs.mkdirSync(SERVER_TEMP_DIR, { recursive: true });
+} catch (_) {}
+
+const COOKIES_FILE = path.join(__dirname, "cookies.txt");
+
+function initCookies() {
+  if (process.env.YOUTUBE_COOKIES) {
+    try {
+      fs.writeFileSync(COOKIES_FILE, process.env.YOUTUBE_COOKIES, "utf8");
+      console.log("  ✓  Cookies de YouTube cargadas desde variable YOUTUBE_COOKIES.");
+    } catch (err) {
+      console.error("  [!] Error escribiendo cookies.txt:", err.message);
+    }
+  } else if (fs.existsSync(COOKIES_FILE) && fs.statSync(COOKIES_FILE).size > 10) {
+    console.log("  ✓  Archivo cookies.txt detectado y activo.");
+  }
+}
+initCookies();
 
 function getYtDlpBinName() {
   if (process.platform === "win32") return "yt-dlp.exe";
@@ -81,11 +107,54 @@ function saveConfig(cfg) {
   } catch (_) {}
 }
 
+function downloadFile(url, dest) {
+  return new Promise((resolve, reject) => {
+    const request = (currentUrl) => {
+      https.get(currentUrl, (res) => {
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          return request(res.headers.location);
+        }
+        if (res.statusCode !== 200) {
+          return reject(new Error(`HTTP ${res.statusCode} al descargar ${currentUrl}`));
+        }
+        const file = fs.createWriteStream(dest);
+        res.pipe(file);
+        file.on("finish", () => {
+          file.close(() => resolve());
+        });
+        file.on("error", (err) => {
+          try { fs.unlinkSync(dest); } catch (_) {}
+          reject(err);
+        });
+      }).on("error", (err) => {
+        try { fs.unlinkSync(dest); } catch (_) {}
+        reject(err);
+      });
+    };
+    request(url);
+  });
+}
+
+function updateYtDlpBackground(binPath) {
+  try {
+    exec(`"${binPath}" -U`, (err, stdout) => {
+      if (!err && stdout) {
+        addDebug(`[i] Actualizador yt-dlp: ${stdout.trim().replace(/[\r\n]+/g, ' ')}`);
+      }
+    });
+  } catch (_) {}
+}
+
 async function downloadYtDlp() {
-  if (fs.existsSync(getYtDlpPath())) {
-    ytDlpStatus = "ready";
-    return;
-  }
+  const targetPath = path.join(BIN_DIR, getYtDlpBinName());
+  try {
+    if (fs.existsSync(targetPath) && fs.statSync(targetPath).size > 1000000) {
+      ytDlpStatus = "ready";
+      updateYtDlpBackground(targetPath);
+      return;
+    }
+  } catch (_) {}
+
   ytDlpStatus = "downloading";
   if (!fs.existsSync(BIN_DIR)) fs.mkdirSync(BIN_DIR, { recursive: true });
 
@@ -97,30 +166,44 @@ async function downloadYtDlp() {
   };
 
   const url = urls[process.platform] || urls.linux;
-  const dest = getYtDlpPath();
 
-  console.log(` [i] Descargando yt-dlp desde: ${url}`);
-  return new Promise((resolve, reject) => {
-    const file = fs.createWriteStream(dest);
-    https.get(url, (res) => {
-      if (res.statusCode === 302 || res.statusCode === 301) {
-        https.get(res.headers.location, (res2) => res2.pipe(file));
-      } else {
-        res.pipe(file);
-      }
-      file.on("finish", () => {
-        file.close();
-        if (process.platform !== "win32") fs.chmodSync(dest, "755");
-        ytDlpStatus = "ready";
-        console.log("  ✓  yt-dlp descargado.");
-        resolve();
-      });
-    }).on("error", (err) => {
-      fs.unlink(dest, () => {});
-      ytDlpStatus = "error";
-      reject(err);
-    });
-  });
+  addDebug(`[i] Descargando yt-dlp desde: ${url}`);
+  try {
+    await downloadFile(url, targetPath);
+    if (process.platform !== "win32") {
+      try { fs.chmodSync(targetPath, "755"); } catch (_) {}
+    }
+    ytDlpStatus = "ready";
+    addDebug("  ✓  yt-dlp descargado correctamente.");
+  } catch (err) {
+    ytDlpStatus = "error";
+    addDebug(` [X] Error descargando yt-dlp: ${err.message}`);
+    throw err;
+  }
+}
+
+function getBaseYtDlpArgs() {
+  const args = [
+    "--no-playlist",
+    "--restrict-filenames",
+    "--js-runtimes", `node:${process.execPath}`,
+    "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "--referer", "https://www.google.com/"
+  ];
+
+  const hasCookies = fs.existsSync(COOKIES_FILE) && fs.statSync(COOKIES_FILE).size > 10;
+  if (hasCookies) {
+    args.push("--cookies", COOKIES_FILE);
+  }
+
+  const ffmpegP = getFfmpegPath();
+  if (ffmpegStatus === "ready" || ffmpegStatus === "system") {
+    if (fs.existsSync(ffmpegP)) {
+      args.push("--ffmpeg-location", ffmpegP);
+    }
+  }
+
+  return args;
 }
 
 async function downloadFfmpeg() {
@@ -128,7 +211,7 @@ async function downloadFfmpeg() {
   if (isReady && ffmpegStatus !== "missing") return;
 
   ffmpegStatus = "downloading";
-  console.log(" [i] FFmpeg no detectado. Iniciando descarga del motor de medios...");
+  addDebug("[i] FFmpeg no detectado. Iniciando descarga del motor de medios...");
   
   const urls = {
     win32: "https://github.com/ffbinaries/ffbinaries-prebuilt/releases/download/v6.1/ffmpeg-6.1-win-64.zip",
@@ -139,45 +222,38 @@ async function downloadFfmpeg() {
   const url = urls[process.platform] || urls.linux;
   const zipDest = path.join(BIN_DIR, "ffmpeg.zip");
 
-  return new Promise((resolve, reject) => {
-    const file = fs.createWriteStream(zipDest);
-    https.get(url, (res) => {
-      if (res.statusCode === 302 || res.statusCode === 301) {
-        https.get(res.headers.location, (res2) => res2.pipe(file));
-      } else {
-        res.pipe(file);
-      }
-      file.on("finish", () => {
-        file.close();
-        console.log(" [i] Extrayendo FFmpeg...");
-        
-        let extractCmd = "";
-        if (process.platform === "win32") {
-          extractCmd = `powershell -Command "Expand-Archive -Path '${zipDest}' -DestinationPath '${BIN_DIR}' -Force"`;
-        } else {
-          extractCmd = `unzip -o "${zipDest}" -d "${BIN_DIR}"`;
-        }
+  try {
+    await downloadFile(url, zipDest);
+    addDebug(" [i] Extrayendo FFmpeg...");
+    
+    let extractCmd = "";
+    if (process.platform === "win32") {
+      extractCmd = `powershell -Command "Expand-Archive -Path '${zipDest}' -DestinationPath '${BIN_DIR}' -Force"`;
+    } else {
+      extractCmd = `python3 -c "import zipfile; zipfile.ZipFile('${zipDest}').extractall('${BIN_DIR}')" || unzip -o "${zipDest}" -d "${BIN_DIR}"`;
+    }
 
-        exec(extractCmd, (err) => {
-          fs.unlink(zipDest, () => {});
-          if (err) {
-            console.error(" [X] Error extrayendo FFmpeg. Asegúrate de tener 'unzip' instalado.");
-            ffmpegStatus = "error";
-            reject(err);
-          } else {
-            if (process.platform !== "win32") fs.chmodSync(getFfmpegPath(), "755");
-            ffmpegStatus = "ready";
-            console.log("  ✓  FFmpeg listo.");
-            resolve();
+    await new Promise((resolve, reject) => {
+      exec(extractCmd, (err) => {
+        try { fs.unlinkSync(zipDest); } catch (_) {}
+        if (err) {
+          addDebug(` [X] Error extrayendo FFmpeg: ${err.message}`);
+          ffmpegStatus = "error";
+          reject(err);
+        } else {
+          if (process.platform !== "win32") {
+            try { fs.chmodSync(getFfmpegPath(), "755"); } catch (_) {}
           }
-        });
+          ffmpegStatus = "ready";
+          addDebug("  ✓  FFmpeg listo.");
+          resolve();
+        }
       });
-    }).on("error", (err) => {
-      fs.unlink(zipDest, () => {});
-      ffmpegStatus = "error";
-      reject(err);
     });
-  });
+  } catch (err) {
+    ffmpegStatus = "error";
+    addDebug(` [X] Error en descarga de FFmpeg: ${err.message}`);
+  }
 }
 
 function openFolder(folder) {
@@ -215,6 +291,28 @@ function openFolder(folder) {
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "index.html"));
+});
+
+const debugLogs = [];
+function addDebug(msg) {
+  const entry = `[${new Date().toISOString()}] ${msg}`;
+  debugLogs.push(entry);
+  if (debugLogs.length > 100) debugLogs.shift();
+  console.log(entry);
+}
+
+app.get("/api/debug-logs", (req, res) => {
+  res.json({
+    isHosted,
+    ytDlpStatus,
+    ffmpegStatus,
+    activeDownloads: Array.from(activeDownloads.entries()).map(([k, v]) => ({ id: k, ...v })),
+    logs: debugLogs
+  });
+});
+
 app.get("/api/status", (req, res) => res.json({ ytdlp: ytDlpStatus, ffmpeg: ffmpegStatus, isHosted }));
 app.get("/api/config", (req, res) => res.json(loadConfig()));
 app.post("/api/config", (req, res) => {
@@ -226,12 +324,16 @@ app.post("/api/info", (req, res) => {
   const { url } = req.body;
   if (!url) return res.status(400).json({ error: "URL requerida" });
 
-  const proc = spawn(getYtDlpPath(), ["-j", "--no-playlist", url]);
+  const args = ["-j", ...getBaseYtDlpArgs(), url];
+  const proc = spawn(getYtDlpPath(), args);
   let stdout = "", stderr = "";
   proc.stdout.on("data", (d) => (stdout += d));
   proc.stderr.on("data", (d) => (stderr += d));
   proc.on("close", (code) => {
-    if (code !== 0) return res.status(500).json({ error: stderr || "No se pudo obtener la información del vídeo" });
+    if (code !== 0) {
+      addDebug(`[INFO ERROR] ${stderr}`);
+      return res.status(500).json({ error: stderr || "No se pudo obtener la información del vídeo" });
+    }
     try {
       const info = JSON.parse(stdout);
       res.json({
@@ -273,28 +375,21 @@ app.post("/api/download", (req, res) => {
 
   const args = [
     "--newline", 
-    "--progress", 
-    "--no-playlist", 
-    "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    "--referer", "https://www.google.com/",
-    "-o", path.join(finalDir, "%(title)s.%(ext)s")
+    "--progress",
+    ...getBaseYtDlpArgs(),
+    "-o", path.join(finalDir, "%(title)s.%(ext)s"),
+    url
   ];
-  
-  const ffmpegP = getFfmpegPath();
-  if (ffmpegStatus === "ready" || ffmpegStatus === "system") {
-    if (fs.existsSync(ffmpegP)) {
-      args.push("--ffmpeg-location", ffmpegP);
-    }
-  }
-
-  args.push(url);
 
   if (mode === "audio") {
     args.push("-x", "--audio-format", "mp3");
   } else {
-    // Formato flexible compatible con Instagram, TikTok y YouTube
+    // Formato adaptable universal
     args.push("-f", "b/bestvideo+bestaudio/best");
   }
+
+  addDebug(`Iniciando descarga ${downloadId} -> ${url}`);
+  addDebug(`Comando: ${getYtDlpPath()} ${args.join(" ")}`);
 
   const proc = spawn(getYtDlpPath(), args);
   const state = { 
@@ -305,13 +400,14 @@ app.post("/api/download", (req, res) => {
     status: "downloading", 
     directory: finalDir,
     fullPath: null,
-    downloadId
+    downloadId,
+    message: ""
   };
   activeDownloads.set(downloadId, state);
 
   proc.stdout.on("data", (data) => {
     const line = data.toString();
-    console.log(`[yt-dlp] ${line.trim()}`);
+    addDebug(`[STDOUT] ${line.trim()}`);
     const m = line.match(/(\d+\.\d+)% of .* at\s+(.*) ETA (.*)/);
     if (m) {
       state.percent = parseFloat(m[1]);
@@ -320,36 +416,65 @@ app.post("/api/download", (req, res) => {
     }
     const destMatch = line.match(/(?:Destination:|(?:Merging formats into ")|(?:has already been downloaded)) (.*)/);
     if (destMatch) {
-      let cleaned = destMatch[1].replace(/^"|"$/g, '').trim();
+      let cleaned = destMatch[1].replace(/[\r\n"']/g, '').trim();
       state.filename = path.basename(cleaned);
       state.fullPath = cleaned;
     }
   });
 
   proc.stderr.on("data", (data) => {
-    console.error(`[yt-dlp ERROR] ${data.toString().trim()}`);
+    const errLine = data.toString().trim();
+    addDebug(`[STDERR] ${errLine}`);
+    if (errLine.includes("ERROR:") || errLine.includes("HTTP Error 403") || errLine.includes("Sign in to confirm")) {
+      const cleanMsg = errLine.replace(/.*?ERROR:\s*/i, '').trim();
+      state.message = cleanMsg || errLine;
+    }
   });
 
   proc.on("error", (err) => {
-    console.error(`[!] Error al iniciar yt-dlp: ${err.message}`);
+    addDebug(`[PROC ERROR] ${err.message}`);
     state.status = "error";
+    state.message = err.message;
     logError(err);
   });
 
   proc.on("close", (code) => {
-    console.log(`[yt-dlp] Proceso finalizado con código ${code}`);
-    state.status = (code === 0) ? "complete" : "error";
+    addDebug(`[PROC CLOSE] Código: ${code}`);
     if (code === 0) {
-      state.percent = 100;
-      // Si no se capturó la ruta exacta del archivo, buscarlo en finalDir
-      if (!state.fullPath || !fs.existsSync(state.fullPath)) {
-        try {
-          const files = fs.readdirSync(finalDir).filter(f => !f.endsWith('.part') && !f.endsWith('.ytdl'));
-          if (files.length > 0) {
-            state.filename = files[0];
-            state.fullPath = path.join(finalDir, files[0]);
+      // Buscar el archivo final completo en finalDir
+      try {
+        if (fs.existsSync(finalDir)) {
+          const allFiles = fs.readdirSync(finalDir).filter(f => 
+            !f.endsWith('.part') && 
+            !f.endsWith('.ytdl') && 
+            !f.endsWith('.temp')
+          );
+          
+          addDebug(`Archivos encontrados en ${finalDir}: ${JSON.stringify(allFiles)}`);
+
+          if (allFiles.length > 0) {
+            const mergedFiles = allFiles.filter(f => !/\.f\d+\./.test(f));
+            const chosenFile = mergedFiles.length > 0 ? mergedFiles[0] : allFiles[0];
+
+            state.filename = chosenFile.replace(/\.f\d+\./, '.');
+            state.fullPath = path.join(finalDir, chosenFile);
+            state.status = "complete";
+            state.percent = 100;
+            addDebug(`Descarga completada con éxito: ${state.fullPath}`);
+          } else {
+            state.status = "error";
+            state.message = "No se pudo generar el archivo final en el servidor.";
+            addDebug(`ERROR: Ningún archivo final en ${finalDir}`);
           }
-        } catch (_) {}
+        } else {
+          state.status = "error";
+          state.message = "Directorio temporal no encontrado.";
+          addDebug(`ERROR: Directorio no existe ${finalDir}`);
+        }
+      } catch (err) {
+        state.status = "error";
+        state.message = err.message;
+        addDebug(`CATCH ERROR: ${err.message}`);
       }
 
       // En modo hosted, programar limpieza tras 30 minutos si el usuario no descarga
@@ -362,6 +487,9 @@ app.post("/api/download", (req, res) => {
           } catch (_) {}
         }, 30 * 60 * 1000);
       }
+    } else {
+      state.status = "error";
+      if (!state.message) state.message = "Error descargando el vídeo desde la plataforma originaria.";
     }
   });
 
