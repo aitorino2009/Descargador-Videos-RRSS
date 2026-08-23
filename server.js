@@ -135,11 +135,22 @@ function downloadFile(url, dest) {
   });
 }
 
+function updateYtDlpBackground(binPath) {
+  try {
+    exec(`"${binPath}" -U`, (err, stdout) => {
+      if (!err && stdout) {
+        addDebug(`[i] Actualizador yt-dlp: ${stdout.trim().replace(/[\r\n]+/g, ' ')}`);
+      }
+    });
+  } catch (_) {}
+}
+
 async function downloadYtDlp() {
   const targetPath = path.join(BIN_DIR, getYtDlpBinName());
   try {
     if (fs.existsSync(targetPath) && fs.statSync(targetPath).size > 1000000) {
       ytDlpStatus = "ready";
+      updateYtDlpBackground(targetPath);
       return;
     }
   } catch (_) {}
@@ -169,6 +180,30 @@ async function downloadYtDlp() {
     addDebug(` [X] Error descargando yt-dlp: ${err.message}`);
     throw err;
   }
+}
+
+function getBaseYtDlpArgs() {
+  const args = [
+    "--no-playlist",
+    "--restrict-filenames",
+    "--js-runtimes", `node:${process.execPath}`,
+    "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "--referer", "https://www.google.com/"
+  ];
+
+  const hasCookies = fs.existsSync(COOKIES_FILE) && fs.statSync(COOKIES_FILE).size > 10;
+  if (hasCookies) {
+    args.push("--cookies", COOKIES_FILE);
+  }
+
+  const ffmpegP = getFfmpegPath();
+  if (ffmpegStatus === "ready" || ffmpegStatus === "system") {
+    if (fs.existsSync(ffmpegP)) {
+      args.push("--ffmpeg-location", ffmpegP);
+    }
+  }
+
+  return args;
 }
 
 async function downloadFfmpeg() {
@@ -289,12 +324,16 @@ app.post("/api/info", (req, res) => {
   const { url } = req.body;
   if (!url) return res.status(400).json({ error: "URL requerida" });
 
-  const proc = spawn(getYtDlpPath(), ["-j", "--no-playlist", url]);
+  const args = ["-j", ...getBaseYtDlpArgs(), url];
+  const proc = spawn(getYtDlpPath(), args);
   let stdout = "", stderr = "";
   proc.stdout.on("data", (d) => (stdout += d));
   proc.stderr.on("data", (d) => (stderr += d));
   proc.on("close", (code) => {
-    if (code !== 0) return res.status(500).json({ error: stderr || "No se pudo obtener la información del vídeo" });
+    if (code !== 0) {
+      addDebug(`[INFO ERROR] ${stderr}`);
+      return res.status(500).json({ error: stderr || "No se pudo obtener la información del vídeo" });
+    }
     try {
       const info = JSON.parse(stdout);
       res.json({
@@ -334,34 +373,13 @@ app.post("/api/download", (req, res) => {
 
   try { fs.mkdirSync(finalDir, { recursive: true }); } catch (_) {}
 
-  const hasCookies = fs.existsSync(COOKIES_FILE) && fs.statSync(COOKIES_FILE).size > 10;
-
   const args = [
     "--newline", 
-    "--progress", 
-    "--no-playlist", 
-    "--restrict-filenames",
-    "--js-runtimes", "node",
-    "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    "--referer", "https://www.google.com/",
-    "-o", path.join(finalDir, "%(title)s.%(ext)s")
+    "--progress",
+    ...getBaseYtDlpArgs(),
+    "-o", path.join(finalDir, "%(title)s.%(ext)s"),
+    url
   ];
-
-  if (hasCookies) {
-    args.push("--cookies", COOKIES_FILE);
-    args.push("--extractor-args", "youtube:player_client=web,android");
-  } else {
-    args.push("--extractor-args", "youtube:player_client=android,ios;player_skip=webpage");
-  }
-
-  const ffmpegP = getFfmpegPath();
-  if (ffmpegStatus === "ready" || ffmpegStatus === "system") {
-    if (fs.existsSync(ffmpegP)) {
-      args.push("--ffmpeg-location", ffmpegP);
-    }
-  }
-
-  args.push(url);
 
   if (mode === "audio") {
     args.push("-x", "--audio-format", "mp3");
@@ -407,8 +425,9 @@ app.post("/api/download", (req, res) => {
   proc.stderr.on("data", (data) => {
     const errLine = data.toString().trim();
     addDebug(`[STDERR] ${errLine}`);
-    if (errLine.includes("ERROR:") || errLine.includes("Error")) {
-      state.message = errLine;
+    if (errLine.includes("ERROR:") || errLine.includes("HTTP Error 403") || errLine.includes("Sign in to confirm")) {
+      const cleanMsg = errLine.replace(/.*?ERROR:\s*/i, '').trim();
+      state.message = cleanMsg || errLine;
     }
   });
 

@@ -13,6 +13,9 @@ Este archivo representa la **MEMORIA LITERARIA VIVA DEL AGENTE**. Aquí se regis
 ---
 
 ## 🎓 2. APRENDIZAJES RECIENTES
+- **Actualización Dinámica de Motor `yt-dlp`**: Mantener `yt-dlp` en su última versión mediante chequeo en segundo plano (`yt-dlp -U`) es imprescindible debido a las constantes modificaciones de algoritmos de descifrado, SABR streaming y PoTokens de YouTube.
+- **Runtime Explícito de JavaScript para YouTube**: Pasar `--js-runtimes node:${process.execPath}` garantiza que `yt-dlp` siempre resuelva los desafíos de firma (`n challenge`) sin requerir Deno ni Bun externos en cualquier sistema operativo o entorno empaquetado.
+- **Evitar forzar clientes `android,ios` sin PoToken**: Forzar `player_client=android,ios;player_skip=webpage` provoca `HTTP Error 403: Forbidden` en vídeos recientes de YouTube porque la plataforma exige PoToken en streams de Android. La estrategia por defecto de `yt-dlp` con runtime JS maneja los flujos modernos (visionos, web, m3u8) sin bloqueos 403.
 - **Soporte de Cookies de Autenticación de YouTube**: En el servidor web (`isHosted`), si existe `cookies.txt` o la variable de entorno `YOUTUBE_COOKIES`, `yt-dlp` pasa automáticamente el argumento `--cookies cookies.txt`. Esto permite a Render autenticarse como usuario verificado y omitir las restricciones de IP de centros de datos. `cookies.txt` está incluido en `.gitignore` para proteger la privacidad del usuario.
 - **Aislamiento por ID de Sesión**: Para descargas concurrentes en el servidor web, guardar cada procesamiento en una subcarpeta `%TEMP%/clipprofit_web_downloads/:downloadId` garantiza que varios usuarios no se pisen los archivos ni los nombres.
 - **Ruta de Entrega HTTP Directa**: Endpoint `GET /api/file/:id` utilizando `res.download()` envía las cabeceras `Content-Disposition: attachment` forzando la descarga directa en el navegador del usuario en cualquier dispositivo (móvil, PC, tablet).
@@ -22,8 +25,11 @@ Este archivo representa la **MEMORIA LITERARIA VIVA DEL AGENTE**. Aquí se regis
 ---
 
 ## ⚠️ 3. FALLOS COMETIDOS Y CÓMO EVITARLOS
-1. **Fallo**: `n challenge solving failed` seguido de `Only images are available for download` / `Requested format is not available`. Ocurre porque YouTube requiere resolver un desafío criptográfico en JavaScript (el algoritmo `n`). Sin un runtime JS especificado, YouTube oculta todos los formatos de vídeo y solo ofrece miniaturas.
-   - **Solución / Regla**: Incluir `--js-runtimes node` en los argumentos globales de `yt-dlp`. Como el entorno Node.js del servidor está disponible, `yt-dlp` resuelve el `n challenge` inmediatamente y expone todos los formatos de vídeo (1080p, 720p, etc.).
+1. **Fallo**: `HTTP Error 403: Forbidden` al 0%-2% de descarga en YouTube, junto con `WARNING: Your yt-dlp version is older than 90 days!` y `No supported JavaScript runtime could be found`.
+   - **Causa**: (a) El binario `yt-dlp` descargado previamente nunca se actualizaba, quedando obsoleto frente a los ciphers de YouTube. (b) Se forzaba `--extractor-args "youtube:player_client=android,ios;player_skip=webpage"` que YouTube ahora corta con 403. (c) No se proporcionaba la ruta completa al binario de Node en `--js-runtimes`.
+   - **Solución / Regla**: Añadir chequeo y actualización en segundo plano (`yt-dlp -U`), pasar `node:${process.execPath}` y usar argumentos base unificados con el selector dinámico por defecto de `yt-dlp`.
+2. **Fallo**: `n challenge solving failed` seguido de `Only images are available for download` / `Requested format is not available`. Ocurre porque YouTube requiere resolver un desafío criptográfico en JavaScript (el algoritmo `n`). Sin un runtime JS especificado, YouTube oculta todos los formatos de vídeo y solo ofrece miniaturas.
+   - **Solución / Regla**: Incluir `--js-runtimes node:${process.execPath}` en los argumentos globales de `yt-dlp`. Como el entorno Node.js del servidor está disponible, `yt-dlp` resuelve el `n challenge` inmediatamente y expone todos los formatos de vídeo (1080p, 720p, etc.).
 2. **Fallo**: `Requested format is not available` al pedir descargas de YouTube. Ocurrió porque la cadena de formato forzaba la extensión rígida `best[ext=mp4]`, la cual no existe directamente en vídeos de alta resolución donde YouTube utiliza WebM/VP9 o flujos mixtos.
    - **Solución / Regla**: Utilizar la cadena de formato universal `b/bestvideo+bestaudio/best`. `yt-dlp` elegirá automáticamente el mejor flujo de vídeo disponible sin fallar por restricción de extensión.
 2. **Fallo**: `Failed to extract any player response` al usar cookies junto con `player_skip=webpage`. El modificador `player_skip=webpage` impedía que YouTube validase los tokens de sesión de las cookies enviadas.

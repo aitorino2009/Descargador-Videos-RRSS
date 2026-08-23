@@ -48,3 +48,4 @@ Este archivo representa el almacenamiento del contexto, arquitectura, decisiones
 
 ## 📜 Historial de Sesiones
 - **2026-07-26**: Implementación del sistema Spec-Driven Development (`agent.md`, `engram.md`, `.agent/specs/`, `.agent/skills/`) y conversión completa a aplicación servidor web alojable con Docker y descargas en navegador.
+- **2026-08-23**: Corrección de fallo de descarga en YouTube (`HTTP Error 403: Forbidden`). Actualización de motor `yt-dlp` a versión 2026.08.19+, vinculación explícita del runtime Node.js (`--js-runtimes node:${process.execPath}`), eliminación de flags obsoletos de cliente Android y añadido de auto-actualizador en segundo plano.
