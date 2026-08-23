@@ -12,8 +12,7 @@
   },
   "pkg": {
     "assets": [
-      "public/**/*",
-      "bin/**/*"
+      "public/**/*"
     ],
     "targets": [
       "node16-win-x64",
