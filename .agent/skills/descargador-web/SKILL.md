@@ -60,7 +60,7 @@ docker-compose up -d --build
 ## 📦 4. Compilar Ejecutable Portátil de Escritorio
 
 ```bash
-npm run build
+npm run build:exe
 ```
 Genera los ejecutables nativos en `dist/`:
 - `Descargador-Videos-Windows.exe`
