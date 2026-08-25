@@ -8,7 +8,7 @@
     "start": "node server.js",
     "start:hosted": "node server.js",
     "build": "echo 'No build step needed'",
-    "build:exe": "npx pkg . --out-path dist"
+    "build:exe": "npx pkg . --out-path dist && node scripts/inyectar-icono.js"
   },
   "pkg": {
     "assets": [

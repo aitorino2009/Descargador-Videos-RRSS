@@ -54,6 +54,9 @@ Este archivo representa la **MEMORIA LITERARIA VIVA DEL AGENTE**. Aquí se regis
    - **Solución / Regla**: Toda spec o skill creada debe bautizarse en castellano (ej: `.agent/specs/01-alojamiento-servidor-web.md`, `.agent/skills/descargador-web/`).
 5. **Fallo**: Intentar usar selectores de carpeta de sistema local cuando la app corre en un servidor remoto.
    - **Solución / Regla**: Comprobar siempre `if (isHosted)` y devolver respuesta nula o deshabilitar elementos de ruta local en la interfaz web.
+6. **Fallo**: `Pkg: Error reading from file.` al abrir el ejecutable `.exe` de Windows (la ventana de CMD se abre y se cierra al instante).
+   - **Causa**: Al intentar incrustar el icono `.ico` con utilidades C++ directas tipo `rcedit`, se truncaba o corrompía la carga útil (payload / VFS) que `pkg` añade al final del archivo PE (se perdían ~2MB de datos empaquetados).
+   - **Solución / Regla**: Usar la biblioteca `resedit` a través de un script dedicado (`scripts/inyectar-icono.js`), la cual analiza la sección `extraData` (overlay) del ejecutable y reconstruye el binario PE manteniendo intacta la carga útil de `pkg`. En `package.json`, el script `"build:exe"` ahora ejecuta automáticamente `npx pkg . --out-path dist && node scripts/inyectar-icono.js`.
 
 ---
 
