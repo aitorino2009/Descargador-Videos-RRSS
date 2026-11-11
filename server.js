@@ -354,6 +354,7 @@ app.post("/api/download", (req, res) => {
   const { url, mode } = req.body;
   const cfg = loadConfig();
   const downloadId = crypto.randomUUID();
+  const startTime = Date.now();
 
   let finalDir;
   if (isHosted) {
@@ -405,20 +406,43 @@ app.post("/api/download", (req, res) => {
   };
   activeDownloads.set(downloadId, state);
 
+  let stdoutBuffer = "";
   proc.stdout.on("data", (data) => {
-    const line = data.toString();
-    addDebug(`[STDOUT] ${line.trim()}`);
-    const m = line.match(/(\d+\.\d+)% of .* at\s+(.*) ETA (.*)/);
-    if (m) {
-      state.percent = parseFloat(m[1]);
-      state.speed = m[2];
-      state.eta = m[3];
-    }
-    const destMatch = line.match(/(?:Destination:|(?:Merging formats into ")|(?:has already been downloaded)) (.*)/);
-    if (destMatch) {
-      let cleaned = destMatch[1].replace(/[\r\n"']/g, '').trim();
-      state.filename = path.basename(cleaned);
-      state.fullPath = cleaned;
+    stdoutBuffer += data.toString();
+    const lines = stdoutBuffer.split(/\r?\n/);
+    stdoutBuffer = lines.pop();
+
+    for (const rawLine of lines) {
+      const line = rawLine.trim();
+      if (!line) continue;
+      addDebug(`[STDOUT] ${line}`);
+
+      const m = line.match(/(\d+\.\d+)% of .* at\s+(.*) ETA (.*)/);
+      if (m) {
+        state.percent = parseFloat(m[1]);
+        state.speed = m[2];
+        state.eta = m[3];
+      }
+
+      let foundPath = null;
+      const mergerOrDest = line.match(/(?:Destination:\s*|Merging formats into\s*)["']?([^"'\r\n]+)/i);
+      if (mergerOrDest) {
+        foundPath = mergerOrDest[1].trim();
+      } else {
+        const alreadyMatch = line.match(/(?:\[download\]\s+)?["']?([^"'\r\n]+?)["']?\s+has already been downloaded/i);
+        if (alreadyMatch) {
+          foundPath = alreadyMatch[1].trim();
+        }
+      }
+
+      if (foundPath) {
+        let cleaned = foundPath.replace(/[\r\n"']/g, '').trim();
+        if (!path.isAbsolute(cleaned)) {
+          cleaned = path.join(finalDir, cleaned);
+        }
+        state.fullPath = cleaned;
+        state.filename = path.basename(cleaned);
+      }
     }
   });
 
@@ -441,35 +465,73 @@ app.post("/api/download", (req, res) => {
   proc.on("close", (code) => {
     addDebug(`[PROC CLOSE] Código: ${code}`);
     if (code === 0) {
-      // Buscar el archivo final completo en finalDir
       try {
-        if (fs.existsSync(finalDir)) {
-          const allFiles = fs.readdirSync(finalDir).filter(f => 
-            !f.endsWith('.part') && 
-            !f.endsWith('.ytdl') && 
-            !f.endsWith('.temp')
-          );
-          
-          addDebug(`Archivos encontrados en ${finalDir}: ${JSON.stringify(allFiles)}`);
+        let verifiedFile = null;
 
-          if (allFiles.length > 0) {
-            const mergedFiles = allFiles.filter(f => !/\.f\d+\./.test(f));
-            const chosenFile = mergedFiles.length > 0 ? mergedFiles[0] : allFiles[0];
+        // 1. Si state.fullPath fue capturado y existe en disco
+        if (state.fullPath && fs.existsSync(state.fullPath)) {
+          verifiedFile = state.fullPath;
+        }
 
-            state.filename = chosenFile.replace(/\.f\d+\./, '.');
-            state.fullPath = path.join(finalDir, chosenFile);
-            state.status = "complete";
-            state.percent = 100;
-            addDebug(`Descarga completada con éxito: ${state.fullPath}`);
-          } else {
-            state.status = "error";
-            state.message = "No se pudo generar el archivo final en el servidor.";
-            addDebug(`ERROR: Ningún archivo final en ${finalDir}`);
+        // 2. Si tenía etiqueta de formato intermedio (ej. .f137.mp4 / .f251.webm)
+        if (!verifiedFile && state.fullPath) {
+          const cleanPath = state.fullPath.replace(/\.f\d+\./, '.');
+          if (fs.existsSync(cleanPath)) {
+            verifiedFile = cleanPath;
           }
+        }
+
+        // 3. Si coincide por nombre base en finalDir (ej. cambio de contenedor o extensión webm -> mp3/mp4)
+        if (!verifiedFile && state.fullPath && fs.existsSync(finalDir)) {
+          const baseNameWithoutExt = path.parse(state.fullPath.replace(/\.f\d+\./, '.')).name;
+          const matchingFiles = fs.readdirSync(finalDir).filter(f => {
+            const p = path.parse(f);
+            return p.name === baseNameWithoutExt &&
+              !f.endsWith('.part') &&
+              !f.endsWith('.ytdl') &&
+              !f.endsWith('.temp');
+          });
+          if (matchingFiles.length > 0) {
+            const clean = matchingFiles.filter(f => !/\.f\d+\./.test(f));
+            verifiedFile = path.join(finalDir, clean.length > 0 ? clean[0] : matchingFiles[0]);
+          }
+        }
+
+        // 4. Fallback de seguridad: buscar en finalDir el archivo generado MÁS RECIENTE
+        if (!verifiedFile && fs.existsSync(finalDir)) {
+          const validFiles = fs.readdirSync(finalDir)
+            .filter(f => !f.endsWith('.part') && !f.endsWith('.ytdl') && !f.endsWith('.temp'))
+            .map(f => {
+              const full = path.join(finalDir, f);
+              try {
+                return { name: f, full, mtimeMs: fs.statSync(full).mtimeMs };
+              } catch (_) {
+                return null;
+              }
+            })
+            .filter(Boolean)
+            .sort((a, b) => b.mtimeMs - a.mtimeMs);
+
+          // Filtrar por los modificados tras el inicio de esta descarga (margen de 10s)
+          const recent = validFiles.filter(f => f.mtimeMs >= startTime - 10000);
+          const pool = recent.length > 0 ? recent : validFiles;
+
+          if (pool.length > 0) {
+            const clean = pool.filter(f => !/\.f\d+\./.test(f.name));
+            verifiedFile = (clean.length > 0 ? clean[0] : pool[0]).full;
+          }
+        }
+
+        if (verifiedFile && fs.existsSync(verifiedFile)) {
+          state.fullPath = verifiedFile;
+          state.filename = path.basename(verifiedFile).replace(/\.f\d+\./, '.');
+          state.status = "complete";
+          state.percent = 100;
+          addDebug(`Descarga completada con éxito: ${state.fullPath}`);
         } else {
           state.status = "error";
-          state.message = "Directorio temporal no encontrado.";
-          addDebug(`ERROR: Directorio no existe ${finalDir}`);
+          state.message = "No se pudo generar el archivo final en el servidor.";
+          addDebug(`ERROR: Ningún archivo final en ${finalDir}`);
         }
       } catch (err) {
         state.status = "error";
@@ -509,9 +571,7 @@ app.get("/api/progress/:id", (req, res) => {
     if (state.status === "complete" || state.status === "error") {
       clearInterval(timer);
       res.write(`data: ${JSON.stringify({ type: state.status, ...state })}\n\n`);
-      if (!isHosted) {
-        setTimeout(() => activeDownloads.delete(id), 5000);
-      }
+      setTimeout(() => activeDownloads.delete(id), 30 * 60 * 1000);
     }
   }, 800);
   req.on("close", () => clearInterval(timer));
