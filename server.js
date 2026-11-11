@@ -11,7 +11,8 @@ const crypto = require("crypto");
 
 const app = express();
 const isHosted = process.env.HOSTED === "true" || process.env.NODE_ENV === "production" || !!process.env.PORT;
-const PORT = process.env.PORT || 7432;
+// PORT activa el modo alojado; PUERTO_LOCAL cambia el puerto sin salir del modo escritorio local.
+const PORT = process.env.PORT || process.env.PUERTO_LOCAL || 7432;
 const HOST = isHosted ? "0.0.0.0" : "127.0.0.1";
 
 // ─────────────────────────────────────────
@@ -744,7 +745,7 @@ function startServer() {
         abrirNavegador(`http://127.0.0.1:${PORT}`);
         process.exit(0);
       }
-      console.error(` [X] El puerto ${PORT} está ocupado por otro programa. Ciérralo o arranca con otro puerto (PORT=7433).`);
+      console.error(` [X] El puerto ${PORT} está ocupado por otro programa. Ciérralo o arranca con otro puerto (PUERTO_LOCAL=7433).`);
       logError(e);
       process.exit(1);
     } else {

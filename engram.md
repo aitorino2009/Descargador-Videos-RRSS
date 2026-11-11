@@ -92,7 +92,7 @@ Este archivo representa la **MEMORIA LITERARIA VIVA DEL AGENTE**. Aquí se regis
   1. **Adiós al `taskkill`.** Antes, con el puerto ocupado, `startServer()` mataba **todos** los `node.exe` (o hacía `fuser -k`), tumbando otros programas y otras instancias. Ahora:
      - `main()` comprueba primero con `consultarDescargador(PORT)` (GET `/api/status`) si ya hay un descargador abierto. Si lo hay, lo reutiliza (abre el navegador ahí, salvo con `SIN_NAVEGADOR=1`) y sale **sin preparar motores**, así que no hay `yt-dlp -U` duplicado.
      - Si aun así salta `EADDRINUSE` (dos arranques a la vez), vuelve a comprobarlo. Si es otro descargador, `exit(0)`; si es otro programa, avisa y `exit(1)` sin tocar nada.
-     - Se puede usar otro puerto con `PORT`.
+     - Otro puerto en modo local: **`PUERTO_LOCAL`**. Ojo: `PORT` activa el modo alojado (`isHosted`), así que no sirve para el escritorio.
   2. **Carpeta privada por descarga** en local: `finalDir/.descargando-<downloadId>/`. Los `.part`, fragmentos y escaneos de respaldo solo ven esa descarga. Al terminar, el archivo se mueve a `finalDir` y la carpeta privada se borra siempre, también con error.
   3. **Nombre con el id del vídeo**: `%(title).120B_%(id)s.%(ext)s`. Dos vídeos con el mismo título ("Video by <cuenta>" en Instagram) ya no se pisan. Si el mismo vídeo llega dos veces, se reutiliza el que ya estaba y no se duplica.
 - **Probado**: 4 descargas simultáneas (el mismo reel dos veces, otro reel de la misma cuenta y un audio de YouTube) en 20 s. Salieron nombres distintos, sin duplicados ni restos `.descargando-*`. El segundo arranque concurrente registró "Otro descargador ya escucha… Se reutiliza ese".
