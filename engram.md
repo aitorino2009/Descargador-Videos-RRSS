@@ -75,6 +75,28 @@ Este archivo representa la **MEMORIA LITERARIA VIVA DEL AGENTE**. Aquí se regis
 
 ---
 
+### [ENGRAM-002] Carpeta del proyecto de reels y modo silencioso para agentes
+- **Fecha**: 11/11/2026
+- **Resumen**: Las descargas del usuario van a la carpeta del proyecto de reels de Whop para que el sistema de agentes tenga acceso siempre.
+- **Detalles**:
+  - `~/.videodl_config.json` → `download_dir = C:\Users\PC\Videos\Parrilla de reels Whop\descargas`. Copia previa: `~/.videodl_config.json.antes-proyecto-reels-20261111.bak`. El organizador sigue siendo `<carpeta>/<Plataforma>/<dd-mm-aa>/`.
+  - `loadConfig()` acepta la variable de entorno **`DESCARGAS_DIR`**, que manda sobre la carpeta guardada.
+  - **`SIN_NAVEGADOR=1`** arranca el servidor local sin abrir el navegador. Lo usa `herramientas/descargar.py` del proyecto de reels.
+  - `/api/info` devuelve además `view_count`, `like_count`, `comment_count`, `upload_date`, `channel`, `webpage_url`, `description`, `track` y `artist`. Instagram no da las vistas sin sesión.
+  - El valor por defecto para otros usuarios no cambia (`~/Videos/Descargas Whop`). Los ejecutables de `dist/` no llevan estos cambios hasta el próximo `npm run build:exe`, pero leen la misma configuración.
+
+### [ENGRAM-003] Descargas simultáneas seguras (varios agentes a la vez)
+- **Fecha**: 11/11/2026
+- **Motivo**: varias instancias de un mismo agente tienen que poder descargar a la vez, sin esperas y sin pisarse.
+- **Cambios**:
+  1. **Adiós al `taskkill`.** Antes, con el puerto ocupado, `startServer()` mataba **todos** los `node.exe` (o hacía `fuser -k`), tumbando otros programas y otras instancias. Ahora:
+     - `main()` comprueba primero con `consultarDescargador(PORT)` (GET `/api/status`) si ya hay un descargador abierto. Si lo hay, lo reutiliza (abre el navegador ahí, salvo con `SIN_NAVEGADOR=1`) y sale **sin preparar motores**, así que no hay `yt-dlp -U` duplicado.
+     - Si aun así salta `EADDRINUSE` (dos arranques a la vez), vuelve a comprobarlo. Si es otro descargador, `exit(0)`; si es otro programa, avisa y `exit(1)` sin tocar nada.
+     - Se puede usar otro puerto con `PORT`.
+  2. **Carpeta privada por descarga** en local: `finalDir/.descargando-<downloadId>/`. Los `.part`, fragmentos y escaneos de respaldo solo ven esa descarga. Al terminar, el archivo se mueve a `finalDir` y la carpeta privada se borra siempre, también con error.
+  3. **Nombre con el id del vídeo**: `%(title).120B_%(id)s.%(ext)s`. Dos vídeos con el mismo título ("Video by <cuenta>" en Instagram) ya no se pisan. Si el mismo vídeo llega dos veces, se reutiliza el que ya estaba y no se duplica.
+- **Probado**: 4 descargas simultáneas (el mismo reel dos veces, otro reel de la misma cuenta y un audio de YouTube) en 20 s. Salieron nombres distintos, sin duplicados ni restos `.descargando-*`. El segundo arranque concurrente registró "Otro descargador ya escucha… Se reutiliza ese".
+
 ## 🎯 5. ESTADO ACTIVO
 - **Memoria viva**: Actualizada con restricciones, fallos y aprendizajes.
 - **Cuadernos de apuntes**: [`.agent/skills/descargador-web/SKILL.md`](file:///c:/Users/PC/Desktop/Extractor%20youtube/Nuevo%20optimizado/Descargador-Videos-RRSS/.agent/skills/descargador-web/SKILL.md)

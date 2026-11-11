@@ -94,11 +94,15 @@ function getDefaultDownloadDir() {
 }
 
 function loadConfig() {
+  let cfg = { download_dir: getDefaultDownloadDir() };
   try {
     if (fs.existsSync(CONFIG_FILE))
-      return JSON.parse(fs.readFileSync(CONFIG_FILE, "utf8"));
+      cfg = JSON.parse(fs.readFileSync(CONFIG_FILE, "utf8"));
   } catch (_) {}
-  return { download_dir: getDefaultDownloadDir() };
+  // DESCARGAS_DIR (variable de entorno) manda sobre la carpeta guardada: la usan los agentes
+  // del proyecto de reels para que todo caiga siempre en su carpeta, sin tocar la configuración.
+  if (process.env.DESCARGAS_DIR) cfg.download_dir = process.env.DESCARGAS_DIR;
+  return cfg;
 }
 
 function saveConfig(cfg) {
@@ -341,6 +345,16 @@ app.post("/api/info", (req, res) => {
         thumbnail: info.thumbnail,
         duration: info.duration,
         uploader: info.uploader,
+        // Métricas públicas para que los agentes del proyecto de reels midan lo viral (si la plataforma las da)
+        view_count: info.view_count ?? null,
+        like_count: info.like_count ?? null,
+        comment_count: info.comment_count ?? null,
+        upload_date: info.upload_date ?? null,
+        channel: info.channel ?? info.uploader_id ?? null,
+        webpage_url: info.webpage_url ?? url,
+        description: info.description ?? null,
+        track: info.track ?? null,
+        artist: info.artist ?? null,
       });
     } catch (e) {
       res.status(500).json({ error: "Error parseando info" });
@@ -372,13 +386,19 @@ app.post("/api/download", (req, res) => {
     finalDir = path.join(cfg.download_dir, platform, dateStr);
   }
 
-  try { fs.mkdirSync(finalDir, { recursive: true }); } catch (_) {}
+  // Carpeta de trabajo privada de esta descarga: varias descargas a la vez (varios agentes o
+  // pestañas) nunca comparten .part ni se confunden de archivo al buscar el resultado final.
+  // En modo alojado finalDir ya es única por descarga.
+  const workDir = isHosted ? finalDir : path.join(finalDir, `.descargando-${downloadId}`);
+  try { fs.mkdirSync(workDir, { recursive: true }); } catch (_) {}
 
   const args = [
-    "--newline", 
+    "--newline",
     "--progress",
     ...getBaseYtDlpArgs(),
-    "-o", path.join(finalDir, "%(title)s.%(ext)s"),
+    // El id del vídeo en el nombre evita que dos vídeos con el mismo título (p. ej. "Video by <cuenta>"
+    // en Instagram) se pisen al llegar a la carpeta final.
+    "-o", path.join(workDir, "%(title).120B_%(id)s.%(ext)s"),
     url
   ];
 
@@ -438,7 +458,7 @@ app.post("/api/download", (req, res) => {
       if (foundPath) {
         let cleaned = foundPath.replace(/[\r\n"']/g, '').trim();
         if (!path.isAbsolute(cleaned)) {
-          cleaned = path.join(finalDir, cleaned);
+          cleaned = path.join(workDir, cleaned);
         }
         state.fullPath = cleaned;
         state.filename = path.basename(cleaned);
@@ -481,10 +501,10 @@ app.post("/api/download", (req, res) => {
           }
         }
 
-        // 3. Si coincide por nombre base en finalDir (ej. cambio de contenedor o extensión webm -> mp3/mp4)
-        if (!verifiedFile && state.fullPath && fs.existsSync(finalDir)) {
+        // 3. Si coincide por nombre base en workDir (ej. cambio de contenedor o extensión webm -> mp3/mp4)
+        if (!verifiedFile && state.fullPath && fs.existsSync(workDir)) {
           const baseNameWithoutExt = path.parse(state.fullPath.replace(/\.f\d+\./, '.')).name;
-          const matchingFiles = fs.readdirSync(finalDir).filter(f => {
+          const matchingFiles = fs.readdirSync(workDir).filter(f => {
             const p = path.parse(f);
             return p.name === baseNameWithoutExt &&
               !f.endsWith('.part') &&
@@ -493,16 +513,16 @@ app.post("/api/download", (req, res) => {
           });
           if (matchingFiles.length > 0) {
             const clean = matchingFiles.filter(f => !/\.f\d+\./.test(f));
-            verifiedFile = path.join(finalDir, clean.length > 0 ? clean[0] : matchingFiles[0]);
+            verifiedFile = path.join(workDir, clean.length > 0 ? clean[0] : matchingFiles[0]);
           }
         }
 
-        // 4. Fallback de seguridad: buscar en finalDir el archivo generado MÁS RECIENTE
-        if (!verifiedFile && fs.existsSync(finalDir)) {
-          const validFiles = fs.readdirSync(finalDir)
+        // 4. Fallback de seguridad: buscar en workDir (solo contiene esta descarga) el archivo MÁS RECIENTE
+        if (!verifiedFile && fs.existsSync(workDir)) {
+          const validFiles = fs.readdirSync(workDir)
             .filter(f => !f.endsWith('.part') && !f.endsWith('.ytdl') && !f.endsWith('.temp'))
             .map(f => {
-              const full = path.join(finalDir, f);
+              const full = path.join(workDir, f);
               try {
                 return { name: f, full, mtimeMs: fs.statSync(full).mtimeMs };
               } catch (_) {
@@ -522,6 +542,18 @@ app.post("/api/download", (req, res) => {
           }
         }
 
+        // En local, mover el resultado de la carpeta privada a la carpeta organizada. Como el nombre
+        // lleva el id del vídeo, si ya existe es el mismo vídeo: se reutiliza y no se duplica.
+        if (verifiedFile && fs.existsSync(verifiedFile) && !isHosted) {
+          const destino = path.join(finalDir, path.basename(verifiedFile).replace(/\.f\d+\./, '.'));
+          if (fs.existsSync(destino)) {
+            fs.rmSync(verifiedFile, { force: true });
+          } else {
+            fs.renameSync(verifiedFile, destino);
+          }
+          verifiedFile = destino;
+        }
+
         if (verifiedFile && fs.existsSync(verifiedFile)) {
           state.fullPath = verifiedFile;
           state.filename = path.basename(verifiedFile).replace(/\.f\d+\./, '.');
@@ -531,7 +563,7 @@ app.post("/api/download", (req, res) => {
         } else {
           state.status = "error";
           state.message = "No se pudo generar el archivo final en el servidor.";
-          addDebug(`ERROR: Ningún archivo final en ${finalDir}`);
+          addDebug(`ERROR: Ningún archivo final en ${workDir}`);
         }
       } catch (err) {
         state.status = "error";
@@ -552,6 +584,11 @@ app.post("/api/download", (req, res) => {
     } else {
       state.status = "error";
       if (!state.message) state.message = "Error descargando el vídeo desde la plataforma originaria.";
+    }
+
+    // En local, borrar siempre la carpeta privada de trabajo (restos .part, fragmentos, etc.)
+    if (!isHosted && workDir !== finalDir) {
+      try { fs.rmSync(workDir, { recursive: true, force: true }); } catch (_) {}
     }
   });
 
@@ -633,9 +670,54 @@ app.post("/api/open-folder", (req, res) => {
 //  Arranque del servidor con protección
 // ─────────────────────────────────────────
 
+// ¿Hay ya un descargador ClipProfit respondiendo en ese puerto? (devuelve su /api/status o null)
+function consultarDescargador(puerto) {
+  return new Promise((resolve) => {
+    const req = http.get({ host: "127.0.0.1", port: puerto, path: "/api/status", timeout: 1500 }, (res) => {
+      let cuerpo = "";
+      res.on("data", (d) => (cuerpo += d));
+      res.on("end", () => {
+        try {
+          const j = JSON.parse(cuerpo);
+          resolve(j && "ytdlp" in j ? j : null);
+        } catch (_) { resolve(null); }
+      });
+    });
+    req.on("timeout", () => { req.destroy(); resolve(null); });
+    req.on("error", () => resolve(null));
+  });
+}
+
+function abrirNavegador(url) {
+  if (isHosted || process.env.SIN_NAVEGADOR === "1") return;
+  if (process.platform === "win32") {
+    exec(`start ${url}`);
+  } else if (process.platform === "darwin") {
+    exec(`open ${url}`);
+  } else {
+    const browserCmds = [
+      `xdg-open "${url}"`,
+      `firefox "${url}"`,
+      `google-chrome-stable "${url}"`,
+      `google-chrome "${url}"`,
+      `chromium "${url}"`,
+      `brave "${url}"`
+    ];
+    exec(browserCmds.join(" || "));
+  }
+}
+
 async function main() {
+  // Si ya hay un descargador abierto (otra ventana, otro agente…), se reutiliza: varias descargas
+  // simultáneas van todas al mismo servidor, que las gestiona en paralelo. No se mata nada.
+  if (!isHosted && await consultarDescargador(PORT)) {
+    console.log(` [i] El descargador ya está abierto en http://127.0.0.1:${PORT}. Se reutiliza.`);
+    abrirNavegador(`http://127.0.0.1:${PORT}`);
+    return;
+  }
+
   console.log(" [i] Verificando dependencias...");
-  
+
   try {
     await Promise.all([
       downloadYtDlp(),
@@ -652,13 +734,19 @@ async function main() {
 
 function startServer() {
   const server = http.createServer(app);
-  server.on('error', (e) => {
+  server.on('error', async (e) => {
     if (e.code === 'EADDRINUSE') {
-      console.log(` [!] Puerto ${PORT} ocupado. Liberando...`);
-      const cmd = process.platform === 'win32' ? `taskkill /F /FI "PID ne ${process.pid}" /IM node.exe` : `fuser -k ${PORT}/tcp`;
-      exec(cmd, () => {
-        setTimeout(() => server.listen(PORT, HOST), 1000);
-      });
+      // Antes se hacía taskkill de TODOS los node.exe (o fuser -k), lo que tumbaba otros programas
+      // y otras instancias. Ahora: si el puerto lo tiene otro descargador ClipProfit, se reutiliza;
+      // si es otro programa, se avisa y se sale sin tocarlo (se puede elegir otro con PORT=...).
+      if (await consultarDescargador(PORT)) {
+        console.log(` [i] Otro descargador ya escucha en el puerto ${PORT}. Se reutiliza ese.`);
+        abrirNavegador(`http://127.0.0.1:${PORT}`);
+        process.exit(0);
+      }
+      console.error(` [X] El puerto ${PORT} está ocupado por otro programa. Ciérralo o arranca con otro puerto (PORT=7433).`);
+      logError(e);
+      process.exit(1);
     } else {
       logError(e);
     }
@@ -670,29 +758,13 @@ function startServer() {
     console.log(`====================================================`);
     console.log(`  ✓  Modo: ${isHosted ? "Servidor Web (Hosted)" : "Escritorio Local"}`);
     console.log(`  ✓  Servidor escuchando en: http://${HOST}:${PORT}`);
-    if (!isHosted) {
+    if (!isHosted && process.env.SIN_NAVEGADOR !== "1") {
       console.log(`  ✓  El navegador se abrirá automáticamente.`);
     }
     console.log(`====================================================`);
-    
-    if (!isHosted) {
-      const url = `http://127.0.0.1:${PORT}`;
-      if (process.platform === "win32") {
-        exec(`start ${url}`);
-      } else if (process.platform === "darwin") {
-        exec(`open ${url}`);
-      } else {
-        const browserCmds = [
-          `xdg-open "${url}"`,
-          `firefox "${url}"`,
-          `google-chrome-stable "${url}"`,
-          `google-chrome "${url}"`,
-          `chromium "${url}"`,
-          `brave "${url}"`
-        ];
-        exec(browserCmds.join(" || "));
-      }
-    }
+
+    // SIN_NAVEGADOR=1: arranque silencioso para uso automático (agentes), sin abrir el navegador.
+    abrirNavegador(`http://127.0.0.1:${PORT}`);
   });
 }
 
